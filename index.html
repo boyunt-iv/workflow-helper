@@ -19,7 +19,8 @@
       <h1 id="indexGateTitle">Unlock Workflow Helper</h1>
       <p class="index-gate-copy">
         Select the encrypted index supplied separately, then enter its passphrase.
-        The decrypted data stays in this tab only.
+        The decrypted data stays in browser memory. Same-origin HTTPS tabs may
+        reuse it only when you explicitly open an internal link in a new tab.
       </p>
       <div class="index-gate-privacy" role="note">
         <strong>Local processing only</strong>
@@ -97,7 +98,7 @@
         <div id="indexStatus" class="index-status">Loading index...</div>
         <div class="app-version">
           <span>Web version</span>
-          <strong>v0.5.0.3</strong>
+          <strong>v0.5.0.4</strong>
         </div>
         <button id="rebuildIndexButton" class="rebuild-button" type="button">Rebuild Index</button>
       </div>
@@ -282,6 +283,7 @@
   </div>
 
   <script src="assets/index-crypto.js"></script>
+  <script src="assets/navigation-policy.js"></script>
   <script src="assets/live/live-data.js"></script>
   <script src="assets/live/live-graph.js"></script>
   <script src="assets/live/live-views.js"></script>
