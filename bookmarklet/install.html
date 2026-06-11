@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"/><title>Live Bridge — install</title>
+<style>body{font:14px system-ui;background:#0f1420;color:#e6ebf5;padding:24px}
+a.bm{display:inline-block;margin:12px 0;background:#1e293b;border:1px dashed #4b5b78;color:#93c5fd;padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:700}
+pre{background:#0b0f18;border:1px solid #222c40;border-radius:8px;padding:12px;white-space:pre-wrap;word-break:break-word}</style>
+</head><body>
+<h1>Live Bridge</h1>
+<ol><li>Drag this to your bookmarks bar: <a class="bm" id="bm" href="#">Live Bridge</a></li>
+<li>From the analyzer's Live API mode, click <b>Run (bridge)</b> — it opens the console window.</li>
+<li>Log in there if needed, then click the <b>Live Bridge</b> bookmarklet in that window.</li></ol>
+<details><summary>bookmarklet source</summary><pre id="src"></pre></details>
+<script src="live-bridge.js"></script>
+<script>
+  const fn = (typeof liveBridge === "function") ? liveBridge : (window.module && module.exports.liveBridge);
+  const src = fn.toString().replace(/^\s*\/\/.*$/gm, "").replace(/\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
+  const code = "javascript:(" + src + ")();void 0;";
+  document.getElementById("bm").href = code;
+  document.getElementById("src").textContent = code;
+</script>
+</body></html>

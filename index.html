@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Workflow Helper</title>
+  <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg" />
+  <link rel="stylesheet" href="assets/app.css" />
+  <link rel="stylesheet" href="assets/live/live.css" />
+  <meta name="author" content="&#x77;&#x69;&#x74;&#x74;&#x61;&#x77;&#x61;&#x73;&#x2e;&#x70;" />
+</head>
+
+<body class="index-locked">
+  <section id="indexGate" class="index-gate" aria-labelledby="indexGateTitle">
+    <div class="index-gate-card">
+      <img class="index-gate-mark" src="./assets/favicon.svg" alt="" aria-hidden="true" />
+      <p class="index-gate-kicker">Protected local index</p>
+      <h1 id="indexGateTitle">Unlock Workflow Helper</h1>
+      <p class="index-gate-copy">
+        Select the encrypted index supplied separately, then enter its passphrase.
+        The decrypted data stays in this tab only.
+      </p>
+      <div class="index-gate-privacy" role="note">
+        <strong>Local processing only</strong>
+        <span>
+          The selected file is read and decrypted inside this browser. It is not
+          uploaded or sent to any server, cloud service, or external API.
+        </span>
+      </div>
+      <form id="indexGateForm">
+        <label class="index-gate-field">
+          <span>Encrypted index file</span>
+          <input id="indexFile" type="file" accept=".enc,application/octet-stream" />
+        </label>
+        <div id="selectedIndexFile" class="index-file-name">No encrypted index selected.</div>
+        <input
+          type="text"
+          name="username"
+          value="local-index"
+          autocomplete="username"
+          tabindex="-1"
+          aria-hidden="true"
+          hidden
+        />
+        <label class="index-gate-field">
+          <span>Passphrase</span>
+          <input
+            id="indexPassphrase"
+            type="password"
+            minlength="4"
+            autocomplete="new-password"
+            spellcheck="false"
+          />
+        </label>
+        <label class="index-gate-remember">
+          <input id="rememberIndexPassphrase" type="checkbox" />
+          Remember passphrase for this tab
+        </label>
+        <button id="unlockIndex" class="index-unlock" type="submit">Unlock index</button>
+      </form>
+      <div id="indexGateStatus" class="index-gate-status" role="status" aria-live="polite"></div>
+      <p class="index-gate-note">
+        The passphrase is never included in exports or written into the index file.
+      </p>
+    </div>
+  </section>
+
+  <div class="floating-toggles">
+    <button class="floating-toggle" data-pane-toggle="rail" title="Toggle Menu">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line><polyline points="13 9 16 12 13 15"></polyline></svg>
+    </button>
+    <button class="floating-toggle" data-pane-toggle="results" title="Toggle Results">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="2.5"></circle><circle cx="17" cy="7" r="2.5"></circle><circle cx="7" cy="17" r="2.5"></circle><circle cx="17" cy="17" r="2.5"></circle></svg>
+    </button>
+    <button class="floating-toggle" data-pane-toggle="diagram" title="Toggle Diagram">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+    </button>
+    <button class="floating-toggle" data-pane-toggle="detail" title="Toggle Detail">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="15" y1="3" x2="15" y2="21"></line><polyline points="11 9 8 12 11 15"></polyline></svg>
+    </button>
+  </div>
+
+  <div class="app-shell">
+    <aside class="mode-rail" aria-label="Analyzer modes">
+      <div class="brand">
+        <span class="brand-mark">
+          <img src="./assets/favicon.svg" alt="" aria-hidden="true" />
+        </span>
+        <span class="brand-text">Workflow Helper</span>
+      </div>
+      <button class="mode-button active" type="button" data-mode="zoral">Zoral</button>
+      <button class="mode-button" type="button" data-mode="zbo">ZBO</button>
+      <button class="mode-button" type="button" data-mode="database">Database</button>
+      <button class="mode-button" type="button" data-mode="live">Zoral Live API</button>
+      <div class="meta-box" aria-live="polite">
+        <div id="indexStatus" class="index-status">Loading index...</div>
+        <div class="app-version">
+          <span>Web version</span>
+          <strong>v0.5.0.3</strong>
+        </div>
+        <button id="rebuildIndexButton" class="rebuild-button" type="button">Rebuild Index</button>
+      </div>
+      <div id="authorLink" class="author-credits" style="margin-top: 8px; text-align: center; font-size: 10px; color: #17202a; user-select: text; -webkit-user-select: text; cursor: default;"></div>
+    </aside>
+    <div class="resizer rail-resizer" data-resize="rail" title="Resize mode rail"></div>
+
+    <main class="workspace">
+      <header class="toolbar">
+
+        <div class="search-group">
+          <label class="sr-only" for="searchInput">Search</label>
+          <input id="searchInput" type="search" placeholder="Search workflow, parameter, field, table, GraphQL..."
+            autocomplete="off" />
+        </div>
+        <div class="segmented" role="group" aria-label="Search mode">
+          <button class="segment active" type="button" data-search-mode="contains">
+            Contains
+          </button>
+          <button class="segment" type="button" data-search-mode="exact">Exact</button>
+        </div>
+        <select id="searchScope" aria-label="Search scope">
+          <option value="all">All (except Code)</option>
+          <option value="workflow">Workflow</option>
+          <option value="zbo">ZBO</option>
+          <option value="parameter">Parameter</option>
+          <option value="field">Field</option>
+          <option value="table">DB/Table</option>
+          <option value="graphql">GraphQL</option>
+          <option value="code">Code</option>
+        </select>
+      </header>
+
+      <section class="content-grid">
+        <aside class="results-pane">
+          <div class="pane-header">
+            <div class="results-title-row">
+              <h1 id="resultsTitle">Zoral Workflows</h1>
+              <div class="match-filter" aria-label="Table usage operation filter">
+                <button class="match-filter-chip active" type="button" data-match-op="all">All</button>
+                <button class="match-filter-chip" type="button" data-match-op="select">Select</button>
+                <button class="match-filter-chip" type="button" data-match-op="insert">Insert</button>
+                <button class="match-filter-chip" type="button" data-match-op="update">Update</button>
+                <button class="match-filter-chip" type="button" data-match-op="delete">Delete</button>
+                <button class="match-filter-chip" type="button" data-match-op="upsert">Upsert</button>
+              </div>
+            </div>
+            <div id="dbSubmodeContainer" class="db-submode-container" style="display: none;">
+              <button class="db-submode-btn active" type="button" data-db-submode="tables">Tables</button>
+              <button class="db-submode-btn" type="button" data-db-submode="enums">Enums</button>
+              <button class="db-submode-btn" type="button" data-db-submode="functions">Funcs</button>
+              <button class="db-submode-btn" type="button" data-db-submode="er">ER</button>
+              <button class="db-submode-btn" type="button" data-db-submode="triggers">Triggers</button>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; margin-top: 8px;">
+              <span id="resultCount">0</span>
+              <button id="copyListButton" class="btn-copy-list" type="button" title="Copy results list to clipboard">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; display: inline-block; vertical-align: middle;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>Copy List
+              </button>
+            </div>
+          </div>
+          <div id="resultsList" class="results-list"></div>
+        </aside>
+        <div class="resizer results-resizer" data-resize="results" title="Resize results pane"></div>
+
+        <section class="diagram-pane">
+          <div class="diagram-header">
+            <div>
+              <h2 id="workflowTitle">Select a workflow</h2>
+              <p id="workflowSubtitle">Search or choose a Zoral workflow from the list.</p>
+            </div>
+            <div class="diagram-actions">
+              <div id="livePaginationControls" class="live-pagination-header" style="display:none;"></div>
+              <button id="diagramSettingsBtn" type="button" class="floating-toggle" title="Diagram Settings" style="min-height: 28px; width: auto; padding: 0 12px; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line-strong); border-radius: 6px; background: #fff;">
+                ⚙️ Settings
+              </button>
+              <div class="zoom-controls" role="group" aria-label="Zoom">
+                <button id="zoomOutButton" type="button" title="Zoom out" aria-label="Zoom out">&minus;</button>
+                <span id="zoomLabel">100%</span>
+                <button id="zoomInButton" type="button" title="Zoom in" aria-label="Zoom in">+</button>
+              </div>
+              <button id="fitButton" type="button">Fit</button>
+            </div>
+          </div>
+          <div id="diagramCanvas" class="diagram-canvas">
+            <div class="empty-state">No workflow selected</div>
+          </div>
+        </section>
+        <div class="resizer detail-resizer" data-resize="detail" title="Resize detail pane"></div>
+
+        <aside class="detail-pane">
+          <div class="tabs" role="tablist">
+            <button class="tab" type="button" data-tab="overview">Overview</button>
+            <button class="tab" type="button" data-tab="node">Node</button>
+            <button class="tab" type="button" data-tab="db">DB/GQL</button>
+            <button class="tab" type="button" data-tab="inbound">Inbound</button>
+            <button class="tab" type="button" data-tab="live-exec" id="tabLiveExec" style="display: none; background: rgba(255, 159, 0, 0.1); color: #ff9f00; border-bottom: 2px solid transparent;">Live Exec 🎯</button>
+          </div>
+
+          <div id="detailContent" class="detail-content"></div>
+        </aside>
+      </section>
+    </main>
+  </div>
+
+  <!-- Consolidated Diagram Settings Modal -->
+  <div id="diagramSettingsModal" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Diagram Settings</h3>
+        <button id="closeSettingsBtn" class="modal-close" type="button" aria-label="Close settings">&times;</button>
+      </div>
+      <div class="settings-grid" style="max-height: 70vh; overflow-y: auto; padding-right: 4px;">
+        <div class="settings-group-title">General Options</div>
+        <label class="inline-check">
+          <input id="toggleDbBadges" type="checkbox" checked />
+          Show Database Badges
+        </label>
+        <label class="inline-check">
+          <input id="toggleConditionText" type="checkbox" />
+          Show Condition Text
+        </label>
+        <label class="inline-check">
+          <input id="toggleEdgeLabels" type="checkbox" checked />
+          Show Edge/Event Labels
+        </label>
+        <label class="inline-check">
+          <input id="toggleNodeDrag" type="checkbox" />
+          Enable Drag Nodes
+        </label>
+
+        <div class="settings-group-title">Zoral Mode Options</div>
+        <label id="toggleZboCallersZoralLabel" class="inline-check">
+          <input id="toggleZboCallersZoral" type="checkbox" />
+          Show ZBO Callers
+        </label>
+
+        <div class="settings-group-title">Database Mode Options</div>
+        <label id="toggleZoralCallersDbLabel" class="inline-check">
+          <input id="toggleZoralCallersDb" type="checkbox" />
+          Show Zoral Callers
+        </label>
+        <label id="toggleZboCallersDbLabel" class="inline-check">
+          <input id="toggleZboCallersDb" type="checkbox" />
+          Show ZBO Callers
+        </label>
+        <label id="toggleDbTriggersLabel" class="inline-check">
+          <input id="toggleDbTriggers" type="checkbox" checked />
+          Show Triggers in Diagram
+        </label>
+        <label id="toggleDbFuncsCallersDbLabel" class="inline-check">
+          <input id="toggleDbFuncsCallersDb" type="checkbox" />
+          Show Functions/Store Procedures
+        </label>
+        <label id="toggleEnumTablesLabel" class="inline-check">
+          <input id="toggleEnumTables" type="checkbox" />
+          Show Enum Tables
+        </label>
+        <label id="toggleDeepHierarchyLabel" class="inline-check">
+          <input id="toggleDeepHierarchy" type="checkbox" />
+          Show Deep Relationship Tree
+        </label>
+        <label id="toggleDbTaskTablesLabel" class="inline-check">
+          <input id="toggleDbTaskTables" type="checkbox" />
+          Show Task/Task Document Tables
+        </label>
+      </div>
+      <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
+        <button id="saveSettingsBtn" type="button" class="rebuild-button" style="min-height:34px; padding: 0 16px; background: var(--accent-2); color: #fff; border: 0; font-weight: bold; border-radius: 8px;">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="loadingOverlay" class="loading-overlay">
+    <div class="loading-panel">
+      <div class="spinner" aria-hidden="true"></div>
+      <strong id="loadingTitle">Loading Index</strong>
+      <p id="loadingMessage">Please wait. The analyzer index is large and may take a while.</p>
+      <div id="loadingProgress" class="loading-progress" hidden></div>
+      <button id="stopFetchBtn" class="rebuild-button" style="margin-top: 16px; background: #ef4444; color: #fff; border: 0; display: none;">Stop Fetching ✕</button>
+    </div>
+  </div>
+
+  <script src="assets/index-crypto.js"></script>
+  <script src="assets/live/live-data.js"></script>
+  <script src="assets/live/live-graph.js"></script>
+  <script src="assets/live/live-views.js"></script>
+  <script src="assets/live/live-env.js"></script>
+  <script src="assets/live/live-mode.js"></script>
+  <script src="assets/index-loader.js"></script>
+  <script>
+    (function() {
+      const el = document.getElementById("authorLink");
+      if (el) {
+        el.textContent = atob("d2l0dGF3YXMucA==");
+      }
+    })();
+  </script>
+</body>
+
+</html>
+<!-- Created by: &#x77;&#x69;&#x74;&#x74;&#x61;&#x77;&#x61;&#x73;&#x2e;&#x70; -->

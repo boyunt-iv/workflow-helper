@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Workflow Helper">
+  <defs>
+    <linearGradient id="lens" x1="12" x2="48" y1="10" y2="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#14b8a6"/>
+      <stop offset="1" stop-color="#0f766e"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#0f172a"/>
+  <path d="M18 22h12m4 0h10M26 22v12m0 4v8m8-12h8" fill="none" stroke="#94a3b8" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="18" cy="22" r="6" fill="#14b8a6"/>
+  <circle cx="44" cy="22" r="6" fill="#38bdf8"/>
+  <circle cx="26" cy="46" r="6" fill="#f59e0b"/>
+  <path d="M38 34c0 2.8 4 2.8 4 0v-7c0-2.8-4-2.8-4 0z" fill="#e2e8f0"/>
+  <path d="M38 27c0 1.6 4 1.6 4 0s-4-1.6-4 0m0 7c0 1.6 4 1.6 4 0" fill="none" stroke="#0f172a" stroke-width="1.5"/>
+  <circle cx="32" cy="32" r="20" fill="none" stroke="url(#lens)" stroke-width="5"/>
+  <path d="M46 46l10 10" fill="none" stroke="#14b8a6" stroke-width="6" stroke-linecap="round"/>
+  <path d="M46 46l10 10" fill="none" stroke="#ccfbf1" stroke-width="2" stroke-linecap="round" opacity=".7"/>
+</svg>
