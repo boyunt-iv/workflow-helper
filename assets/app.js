@@ -1,4 +1,5 @@
 const index = window.ANALYZER_INDEX;
+const navigation = window.AnalyzerNavigation;
 
 const state = {
   workflows: index?.zoral?.workflows || [],
@@ -687,6 +688,10 @@ function bindEvents() {
   if (els.copyListButton) {
     els.copyListButton.addEventListener("click", copyFilteredList);
   }
+
+  document.addEventListener("click", handleInternalNavigationEvent);
+  document.addEventListener("auxclick", handleInternalNavigationEvent);
+  window.addEventListener("popstate", handleNavigationPopState);
 
   els.modeButtons.forEach((button) => {
     button.addEventListener("click", () => {
@@ -5099,36 +5104,122 @@ function renderLiveExecDetail(workflow) {
 }
 
 function makeWorkflowUrl(name) {
-  const url = new URL(window.location.href);
-  url.searchParams.set("workflow", name);
-  url.searchParams.delete("zbo");
-  return url.href;
+  return navigation.buildTargetUrl(window.location.href, "workflow", name);
 }
 
 function makeZboUrl(name) {
-  const url = new URL(window.location.href);
-  url.searchParams.set("zbo", name);
-  url.searchParams.delete("workflow");
-  return url.href;
+  return navigation.buildTargetUrl(window.location.href, "zbo", name);
+}
+
+function internalNavigationAttributes(kind, name) {
+  const href = kind === "workflow" ? makeWorkflowUrl(name) : makeZboUrl(name);
+  return `href="${escapeAttr(href)}" data-analyzer-nav="${kind}" data-analyzer-target="${escapeAttr(name)}"`;
+}
+
+function navigationSnapshot() {
+  if (state.activeMode === "zoral" && state.selectedWorkflow?.name) {
+    return { kind: "workflow", name: state.selectedWorkflow.name };
+  }
+  if (state.activeMode === "zbo" && state.selectedZboArea?.name) {
+    return { kind: "zbo", name: state.selectedZboArea.name };
+  }
+  return { kind: "mode", name: state.activeMode };
+}
+
+function initializeNavigationHistory() {
+  window.history.replaceState(
+    { analyzerNavigation: navigationSnapshot() },
+    "",
+    window.location.href,
+  );
+}
+
+function navigateInternal(kind, name, options = {}) {
+  if (kind === "workflow") {
+    if (!state.workflows.some((workflow) => workflow.name === name)) return false;
+    selectWorkflow(name);
+  } else if (kind === "zbo") {
+    if (!state.zboAreas.some((area) => area.name === name)) return false;
+    selectZboArea(name);
+  } else if (kind === "mode") {
+    setMode(name);
+  } else {
+    return false;
+  }
+
+  if (options.history === "push") {
+    const url =
+      kind === "workflow"
+        ? makeWorkflowUrl(name)
+        : kind === "zbo"
+          ? makeZboUrl(name)
+          : window.location.href;
+    window.history.pushState(
+      { analyzerNavigation: { kind, name } },
+      "",
+      url,
+    );
+  }
+  return true;
+}
+
+function openInternalNavigationTab(kind, name) {
+  const token = window.WorkflowIndexHandoff?.issue();
+  if (!token) return false;
+  const url = navigation.buildTargetUrl(window.location.href, kind, name, token);
+  return Boolean(window.open(url, "_blank"));
+}
+
+function handleInternalNavigationEvent(event) {
+  const link = event.target.closest?.(
+    '[data-analyzer-nav], a.workflow-link[target="_blank"]',
+  );
+  if (!link) return;
+  if (event.type === "click" && event.button !== 0) return;
+  if (event.type === "auxclick" && event.button !== 1) return;
+
+  const target =
+    link.dataset.analyzerNav && link.dataset.analyzerTarget
+      ? {
+          kind: link.dataset.analyzerNav,
+          name: link.dataset.analyzerTarget,
+        }
+      : navigation.readTarget(link.href);
+  if (!target) return;
+
+  event.preventDefault();
+  if (
+    navigation.shouldOpenNewTab(event, window.location) &&
+    openInternalNavigationTab(target.kind, target.name)
+  ) {
+    return;
+  }
+  navigateInternal(target.kind, target.name, { history: "push" });
+}
+
+function handleNavigationPopState(event) {
+  const target =
+    event.state?.analyzerNavigation || navigation.readTarget(window.location.href);
+  if (target) navigateInternal(target.kind, target.name);
 }
 
 function renderWorkflowChip(name) {
   if (state.workflows.some((workflow) => workflow.name === name)) {
-    return `<a class="zbo-chip zbo-chip-link" href="${escapeAttr(makeWorkflowUrl(name))}" target="_blank" rel="noreferrer">${escapeHtml(name)}</a>`;
+    return `<a class="zbo-chip zbo-chip-link" ${internalNavigationAttributes("workflow", name)}>${escapeHtml(name)}</a>`;
   }
   return `<span class="zbo-chip">${escapeHtml(name)}</span>`;
 }
 
 function renderWorkflowInline(name) {
   if (state.workflows.some((workflow) => workflow.name === name)) {
-    return `<a class="workflow-link" href="${escapeAttr(makeWorkflowUrl(name))}" target="_blank" rel="noreferrer">${escapeHtml(name)}</a>`;
+    return `<a class="workflow-link" ${internalNavigationAttributes("workflow", name)}>${escapeHtml(name)}</a>`;
   }
   return escapeHtml(name);
 }
 
 function renderZboAreaInline(name) {
   if (state.zboAreas.some((area) => area.name === name)) {
-    return `<a class="workflow-link" href="${escapeAttr(makeZboUrl(name))}" target="_blank" rel="noreferrer">${escapeHtml(name)}</a>`;
+    return `<a class="workflow-link" ${internalNavigationAttributes("zbo", name)}>${escapeHtml(name)}</a>`;
   }
   return escapeHtml(name);
 }
@@ -7711,4 +7802,5 @@ function init() {
 }
 
 init();
+initializeNavigationHistory();
 
