@@ -1,7 +1,17 @@
 (function (root) {
   "use strict";
 
-  const SESSION_PASSPHRASE_KEY = "workflowHelper.indexPassphrase.v1";
+  // Legacy plaintext sessionStorage key from the tab-only scheme; cleared on load.
+  const LEGACY_SESSION_PASSPHRASE_KEY = "workflowHelper.indexPassphrase.v1";
+  // localStorage entry holding the AES-GCM ciphertext of the passphrase.
+  const PASSPHRASE_STORE_KEY = "workflowHelper.indexPassphrase.v2";
+  // IndexedDB vault holding the non-extractable wrapping key. The key object can
+  // be used by this origin's scripts to encrypt/decrypt but cannot be exported,
+  // so copying localStorage alone (sync, backup, manual paste) does not reveal
+  // the passphrase. It does not defend against scripts running on this origin.
+  const VAULT_DB_NAME = "workflowHelperVault";
+  const VAULT_STORE_NAME = "keys";
+  const VAULT_KEY_ID = "passphraseWrapKey";
   const HANDOFF_TTL_MS = 30_000;
   const gate = document.getElementById("indexGate");
   const gateForm = document.getElementById("indexGateForm");
@@ -72,27 +82,141 @@
     }
   }
 
-  function restoreOptionalPassphrase() {
+  function openVaultDb() {
+    return new Promise((resolve, reject) => {
+      let request;
+      try {
+        request = root.indexedDB.open(VAULT_DB_NAME, 1);
+      } catch (error) {
+        reject(error);
+        return;
+      }
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore(VAULT_STORE_NAME);
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  function vaultRequest(db, mode, run) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(VAULT_STORE_NAME, mode);
+      const store = tx.objectStore(VAULT_STORE_NAME);
+      const request = run(store);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Fetch the non-extractable AES-GCM wrapping key from the vault, generating
+  // and persisting one on first use when create is true.
+  async function getWrapKey(create) {
+    const db = await openVaultDb();
     try {
-      const saved = sessionStorage.getItem(SESSION_PASSPHRASE_KEY);
+      let key = await vaultRequest(db, "readonly", (store) => store.get(VAULT_KEY_ID));
+      if (!key && create) {
+        key = await root.crypto.subtle.generateKey(
+          { name: "AES-GCM", length: 256 },
+          false, // non-extractable: cannot be read back out of the browser
+          ["encrypt", "decrypt"],
+        );
+        await vaultRequest(db, "readwrite", (store) => store.put(key, VAULT_KEY_ID));
+      }
+      return key || null;
+    } finally {
+      db.close();
+    }
+  }
+
+  function bytesToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return root.btoa(binary);
+  }
+
+  function base64ToBytes(text) {
+    const binary = root.atob(text);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+  }
+
+  async function storePassphrase(passphrase) {
+    const key = await getWrapKey(true);
+    if (!key) throw new Error("Passphrase vault key unavailable.");
+    const iv = root.crypto.getRandomValues(new Uint8Array(12));
+    const ciphertext = await root.crypto.subtle.encrypt(
+      { name: "AES-GCM", iv },
+      key,
+      new TextEncoder().encode(passphrase),
+    );
+    root.localStorage.setItem(
+      PASSPHRASE_STORE_KEY,
+      JSON.stringify({ iv: bytesToBase64(iv), ct: bytesToBase64(ciphertext) }),
+    );
+  }
+
+  function clearStoredPassphrase() {
+    try {
+      root.localStorage.removeItem(PASSPHRASE_STORE_KEY);
+    } catch {
+      // Ignore storage failures.
+    }
+  }
+
+  async function loadStoredPassphrase() {
+    const raw = root.localStorage.getItem(PASSPHRASE_STORE_KEY);
+    if (!raw) return "";
+    const key = await getWrapKey(false);
+    if (!key) return "";
+    let payload;
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      clearStoredPassphrase();
+      return "";
+    }
+    if (!payload?.iv || !payload?.ct) return "";
+    const plaintext = await root.crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: base64ToBytes(payload.iv) },
+      key,
+      base64ToBytes(payload.ct),
+    );
+    return new TextDecoder().decode(plaintext);
+  }
+
+  async function restoreOptionalPassphrase() {
+    // Drop any plaintext passphrase left by the old tab-only sessionStorage scheme.
+    try {
+      sessionStorage.removeItem(LEGACY_SESSION_PASSPHRASE_KEY);
+    } catch {
+      // Ignore.
+    }
+    try {
+      const saved = await loadStoredPassphrase();
       if (saved) {
         passphraseInput.value = saved;
         rememberInput.checked = true;
       }
     } catch {
-      // Session storage is optional.
+      // A stored passphrase is optional; ignore vault/crypto/storage failures
+      // and fall back to manual entry.
     }
   }
 
-  function rememberPassphrase(passphrase) {
+  async function rememberPassphrase(passphrase) {
     try {
       if (rememberInput.checked) {
-        sessionStorage.setItem(SESSION_PASSPHRASE_KEY, passphrase);
+        await storePassphrase(passphrase);
       } else {
-        sessionStorage.removeItem(SESSION_PASSPHRASE_KEY);
+        clearStoredPassphrase();
       }
     } catch {
-      // Continue without session storage.
+      // Continue without persistence if the vault is unavailable.
     }
   }
 
@@ -123,7 +247,7 @@
         },
       });
       root.ANALYZER_INDEX = result.index;
-      rememberPassphrase(passphrase);
+      await rememberPassphrase(passphrase);
       passphraseInput.value = "";
       setStatus("Index unlocked. Starting analyzer...", "success");
       await bootApplication();

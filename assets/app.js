@@ -4219,7 +4219,7 @@ function renderZboOverview(area) {
     </section>
     <section class="detail-section">
       <h3>Field Mapping</h3>
-      ${renderZboFieldMappingTable(area.fieldMappings || [])}
+      ${renderZboFieldMappingTable(area.fieldMappings || [], { dbOps: area.graphqlOperations || [] })}
     </section>
   `;
 }
@@ -4777,11 +4777,76 @@ function renderWorkflowZboFieldMappings(workflow, limit = 80) {
   if (!mappings.length) return '<p class="muted">No ZBO field mapping inferred.</p>';
   return renderZboFieldMappingTable(mappings.slice(0, limit), {
     footer: mappings.length > limit ? `Showing first ${limit} of ${mappings.length}.` : "",
+    dbOps: workflow.graphqlOperations || [],
   });
+}
+
+// Fuzzy join key: drop separators and case so GraphQL variable names
+// (camelCase, e.g. nationalId) align with DB column names (snake_case,
+// e.g. national_id) extracted from the GraphQL/SQL text.
+function normalizeBindingKey(name) {
+  return String(name || "").replace(/[_\s-]+/g, "").toLowerCase();
+}
+
+// Join one inferred ZBO field mapping to concrete DB table.column bindings by
+// matching the mapping's candidate names against the columns already detected
+// on the area/workflow GraphQL & SQL operations. Heuristic — see README
+// "Some ZBO field/payload mappings are heuristic."
+function findDbBindingsForMapping(mapping, dbOps) {
+  if (!mapping || !Array.isArray(dbOps) || !dbOps.length) return [];
+  const rawCandidates = [
+    mapping.zoralInputField,
+    mapping.graphqlVariable,
+    mapping.zboField,
+  ].filter(Boolean);
+  if (!rawCandidates.length) return [];
+  const normCandidates = new Set(rawCandidates.map(normalizeBindingKey));
+  const rawSet = new Set(rawCandidates);
+
+  const results = [];
+  const seen = new Set();
+  for (const op of dbOps) {
+    if (!op || !op.table) continue;
+    for (const col of op.columns || []) {
+      const colKey = normalizeBindingKey(col);
+      if (!colKey || !normCandidates.has(colKey)) continue;
+      // Very short keys (id, no, dt) only bind on a raw exact name match to
+      // avoid spraying generic columns across every table.
+      if (colKey.length < 3 && !rawSet.has(col)) continue;
+      const confidence = rawSet.has(col) ? "high" : "medium";
+      const key = `${op.table}.${col}:${op.operation}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      results.push({
+        table: op.table,
+        column: col,
+        operation: op.operation,
+        operationName: op.operationName || "",
+        confidence,
+      });
+    }
+  }
+  // High-confidence (exact-name) bindings first; cap to keep the cell readable.
+  results.sort((a, b) => (a.confidence === b.confidence ? 0 : a.confidence === "high" ? -1 : 1));
+  return results.slice(0, 6);
+}
+
+function renderDbBindingCell(bindings) {
+  if (!bindings.length) return '<span class="muted">-</span>';
+  return bindings
+    .map(
+      (b) =>
+        `<div class="db-binding"><code>${escapeHtml(b.table)}.${escapeHtml(b.column)}</code> ` +
+        `<span class="badge">${escapeHtml(b.operation)}${b.operationName ? " · " + escapeHtml(b.operationName) : ""}</span> ` +
+        `<span class="muted">${escapeHtml(b.confidence)}</span></div>`,
+    )
+    .join("");
 }
 
 function renderZboFieldMappingTable(mappings, options = {}) {
   if (!mappings.length) return '<p class="muted">No field mappings inferred.</p>';
+  const dbOps = Array.isArray(options.dbOps) ? options.dbOps : null;
+  const showBinding = dbOps !== null;
   return `
     <table class="table">
       <thead>
@@ -4790,6 +4855,7 @@ function renderZboFieldMappingTable(mappings, options = {}) {
           <th>ZBO Field</th>
           <th>GraphQL Var / Payload</th>
           <th>Zoral Input</th>
+          ${showBinding ? "<th>DB Table.Field (via)</th>" : ""}
           <th>Confidence</th>
         </tr>
       </thead>
@@ -4802,6 +4868,7 @@ function renderZboFieldMappingTable(mappings, options = {}) {
                 <td>${escapeHtml(mapping.zboField || "-")}</td>
                 <td>${escapeHtml(mapping.graphqlVariable || mapping.kind || "-")}</td>
                 <td>${escapeHtml(mapping.zoralInputField || "-")}</td>
+                ${showBinding ? `<td>${renderDbBindingCell(findDbBindingsForMapping(mapping, dbOps))}</td>` : ""}
                 <td>${escapeHtml(mapping.confidence || "-")}</td>
               </tr>
             `,

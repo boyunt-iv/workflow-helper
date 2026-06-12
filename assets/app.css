@@ -572,6 +572,12 @@ button:disabled {
   font-size: 12px;
 }
 
+.db-binding {
+  margin: 2px 0;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
 .badge.accent {
   background: #e6f4f1;
   color: var(--accent);
