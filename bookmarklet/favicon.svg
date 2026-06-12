@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Live Bridge">
+  <defs>
+    <linearGradient id="bridge" x1="10" x2="54" y1="10" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8b5cf6"/>
+      <stop offset=".55" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#14b8a6"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#0f172a"/>
+  <path d="M16 23h11m10 0h11M22 23v18m20-18v18M22 35h20" fill="none" stroke="#94a3b8" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="16" cy="23" r="6" fill="#8b5cf6"/>
+  <circle cx="48" cy="23" r="6" fill="#38bdf8"/>
+  <circle cx="22" cy="43" r="6" fill="#f59e0b"/>
+  <circle cx="42" cy="43" r="6" fill="#14b8a6"/>
+  <path d="M27 32h10" fill="none" stroke="url(#bridge)" stroke-width="7" stroke-linecap="round"/>
+  <path d="M28 32h8" fill="none" stroke="#eef2ff" stroke-width="2" stroke-linecap="round"/>
+</svg>
