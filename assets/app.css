@@ -1779,6 +1779,37 @@ body.diagram-panning {
 .artifact-details.artifact-hit {
   box-shadow: 0 0 0 1px #ff8f00, 0 0 8px rgba(255, 143, 0, 0.45);
 }
+.artifact-code-wrap {
+  position: relative;
+}
+.artifact-code-wrap .code-block {
+  padding-top: 22px !important;
+}
+.artifact-copy-btn {
+  position: absolute;
+  top: 7px;
+  right: 10px;
+  z-index: 1;
+  border: 0;
+  background: rgba(15, 23, 42, 0.88);
+  color: #60a5fa;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 3px 5px;
+  border-radius: 4px;
+}
+.artifact-copy-btn:hover {
+  color: #bfdbfe;
+  text-decoration: underline;
+}
+.artifact-copy-btn:disabled {
+  cursor: default;
+  opacity: 0.75;
+  text-decoration: none;
+}
 :root {
   --gate-bg: #eef3f8;
 }

@@ -684,12 +684,64 @@ function copyFilteredList() {
     });
 }
 
+async function writeClipboardText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("Browser clipboard command failed");
+}
+
+function getZboArtifactCode(kind, id) {
+  const sources = {
+    query: state.zboQueries,
+    plugin: state.zboPlugins,
+    schema: state.zboSchemas,
+    grid: state.zboGrids,
+  };
+  return sources[kind]?.find((artifact) => artifact.id === id)?.code || "";
+}
+
+async function handleArtifactCopyEvent(event) {
+  const button = event.target.closest("[data-copy-zbo-artifact]");
+  if (!button) return;
+  event.preventDefault();
+  event.stopPropagation();
+
+  const code = getZboArtifactCode(button.dataset.artifactKind, button.dataset.artifactId);
+  if (!code) return;
+  const originalText = button.textContent;
+  button.disabled = true;
+  try {
+    await writeClipboardText(code);
+    button.textContent = "COPIED";
+  } catch (error) {
+    console.error("Failed to copy ZBO artifact:", error);
+    button.textContent = "FAILED";
+  } finally {
+    setTimeout(() => {
+      button.textContent = originalText;
+      button.disabled = false;
+    }, 1200);
+  }
+}
+
 function bindEvents() {
   if (els.copyListButton) {
     els.copyListButton.addEventListener("click", copyFilteredList);
   }
 
   document.addEventListener("click", handleInternalNavigationEvent);
+  document.addEventListener("click", handleArtifactCopyEvent);
   document.addEventListener("auxclick", handleInternalNavigationEvent);
   window.addEventListener("popstate", handleNavigationPopState);
 
@@ -4275,7 +4327,12 @@ function renderArtifactList(ids, kind) {
                   <span style="color: var(--text); font-family: monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(id)}</span>
                   ${isHit ? `<span class="badge" style="background: rgba(255,143,0,0.15); color: #ff8f00; font-weight: 700;">match</span>` : ""}
                 </summary>
-                <div style="padding: 10px; border-top: 1px solid var(--line); background: #0f172a; margin: 0;">
+                <div class="artifact-code-wrap" style="padding: 10px; border-top: 1px solid var(--line); background: #0f172a; margin: 0;">
+                  <button type="button" class="artifact-copy-btn"
+                    data-copy-zbo-artifact
+                    data-artifact-kind="${escapeAttr(kind)}"
+                    data-artifact-id="${escapeAttr(id)}"
+                    aria-label="Copy artifact source" title="Copy artifact source">COPY</button>
                   <pre class="code-block" style="margin: 0; padding: 0; background: transparent; color: #f8fafc; font-family: monospace; font-size: 12px; line-height: 1.4; overflow: auto; max-height: 250px; user-select: text;">${isHit ? highlightSearchHits(code, state.query) : escapeHtml(code)}</pre>
                 </div>
               </details>
