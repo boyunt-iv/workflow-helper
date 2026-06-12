@@ -1,7 +1,7 @@
 (function (root) {
   "use strict";
   const L = () => root.WorkflowLive;
-  const st = { ctx: null, graph: null, view: "gantt", selected: null, env: null, token: null, bridgeWin: null, importedFileName: null, lastAppId: null, showDbInterventions: true, stopRequested: false, loadAllMode: false, allDirectItems: [], nextDirectPage: 1, effPageSize: 0, lastDirectPageCount: 0, hasMorePages: false, incrementalLoad: false, scrollBottomGap: null, progress: { segments: [], skipped: 0 } };
+  const st = { ctx: null, graph: null, view: "gantt", selected: null, env: null, token: null, bridgeWin: null, importedFileName: null, lastAppId: null, showDbInterventions: true, stopRequested: false, loadAllMode: false, autoFetchRelationships: false, allDirectItems: [], directTotal: null, nextDirectPage: 1, effPageSize: 0, lastDirectPageCount: 0, hasMorePages: false, incrementalLoad: false, scrollBottomGap: null, progress: { segments: [], skipped: 0 } };
 
   // --- Loading progress tracking (per round / per page) ---
   // Each segment = one direct page's load + its expansion. The CURRENT (last)
@@ -16,6 +16,8 @@
   }
   let graphRebuildTimer = null;
   let graphRebuildNeeded = false;
+  let workflowSuggestTimer = null;
+  let workflowSuggestActiveIndex = -1;
   let allCollectedItems = [];
   let lastQueryOpts = {};
   const fetchedParents = new Set();
@@ -110,6 +112,20 @@
     });
 
     updateLoadingState();
+  }
+
+  function hasPendingRelationshipExpansion() {
+    return st.allDirectItems.some((item) => item.requestId
+      && (!fetchedParents.has(item.requestId) || !fetchedDetails.has(item.requestId)));
+  }
+
+  function startRelationshipExpansion() {
+    if (!st.allDirectItems.length || !hasPendingRelationshipExpansion()) return;
+    resetProgress();
+    pushProgressSegment("Relationships");
+    st.stopRequested = false;
+    fetchChildren(st.allDirectItems);
+    renderPaginationControls();
   }
 
   function getParentIdFromDetail(json) {
@@ -327,31 +343,47 @@
       return;
     }
 
+    const canFetchRelationships = !!(st.token && st.bridgeWin && !st.bridgeWin.closed);
+    const relationshipButton = canFetchRelationships && !st.autoFetchRelationships && hasPendingRelationshipExpansion()
+      ? `<button id="liveLoadRelationshipsBtn" class="live-page-btn live-page-btn-related"
+          title="Load parent, child, and sibling processes for the current direct search results">Expand related processes</button>`
+      : "";
+
     if (st.hasMorePages) {
+      const loadedLabel = Number.isFinite(st.directTotal)
+        ? `Loaded ${st.allDirectItems.length} of ${st.directTotal} · page ${page}`
+        : `Loaded ${st.allDirectItems.length} · page ${page}`;
       host.innerHTML = `
-        <span class="live-page-status">Loaded ${st.allDirectItems.length} · page ${page}</span>
-        <button id="liveLoadEarlierBtn" class="live-page-btn" title="Load earlier (older) processes — they appear at the top of the timeline">⏶ Load earlier</button>
-        <button id="liveLoadAllBtn" class="live-page-btn live-page-btn-all" title="Load all remaining pages and complete their parent/child traces">Load all</button>
+        <span class="live-page-status">${loadedLabel}</span>
+        ${relationshipButton}
+        <button id="liveLoadEarlierBtn" class="live-page-btn" title="Load earlier (older) direct search results">⏶ Load earlier</button>
+        <button id="liveLoadAllBtn" class="live-page-btn live-page-btn-all" title="Load all remaining direct search result pages">Load all</button>
       `;
       host.style.display = "inline-flex";
       const earlierBtn = host.querySelector("#liveLoadEarlierBtn");
       if (earlierBtn) earlierBtn.addEventListener("click", () => { resetProgress(); fetchNextDirectPage(true); });
       const allBtn = host.querySelector("#liveLoadAllBtn");
       if (allBtn) allBtn.addEventListener("click", () => {
-        if (window.confirm("Load all remaining pages and resolve their parent/child traces? This may issue many requests and take a while.")) {
+        if (window.confirm("Load all remaining direct search result pages? This may issue many requests and take a while.")) {
           resetProgress();
           st.loadAllMode = true;
           fetchNextDirectPage(false);
         }
       });
     } else {
-      host.innerHTML = `<span class="live-page-status live-page-done">All loaded ✓ · ${st.allDirectItems.length} processes</span>`;
+      host.innerHTML = `
+        <span class="live-page-status live-page-done">All direct results loaded ✓ · ${st.allDirectItems.length} processes</span>
+        ${relationshipButton}
+      `;
       host.style.display = "inline-flex";
     }
+    const relationshipBtn = host.querySelector("#liveLoadRelationshipsBtn");
+    if (relationshipBtn) relationshipBtn.addEventListener("click", startRelationshipExpansion);
   }
 
   function envList() { return (root.ANALYZER_ENV && root.ANALYZER_ENV.environments) || []; }
   function curEnv() { return envList().find((e) => e.key === st.env) || envList()[0] || null; }
+  function tagDefinitions() { return root.ANALYZER_ENV?.liveApi?.tags || []; }
 
   const toolbarIcons = {
     environment: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-4-4m4 4 4-4M5 17v3h14v-3"/></svg>',
@@ -384,6 +416,175 @@
     );
   }
 
+  function renderTagControls() {
+    const select = document.getElementById("liveTagName");
+    const input = document.getElementById("liveTagValue");
+    if (!select || !input) return;
+    const previous = select.value;
+    const tags = tagDefinitions();
+    select.replaceChildren();
+    for (const tag of tags) {
+      const option = document.createElement("option");
+      option.value = tag.name;
+      option.textContent = tag.label || tag.name;
+      select.appendChild(option);
+    }
+    const configuredDefault = root.ANALYZER_ENV?.liveApi?.defaultTag;
+    select.value = tags.some((tag) => tag.name === previous)
+      ? previous
+      : (tags.some((tag) => tag.name === configuredDefault) ? configuredDefault : tags[0]?.name || "");
+    select.disabled = tags.length === 0;
+    updateTagValuePlaceholder();
+  }
+
+  function updateTagValuePlaceholder() {
+    const select = document.getElementById("liveTagName");
+    const input = document.getElementById("liveTagValue");
+    if (!select || !input) return;
+    const tag = tagDefinitions().find((item) => item.name === select.value);
+    input.placeholder = tag?.placeholder || (tag ? `Enter ${tag.label || tag.name}` : "Tag value");
+    updateWorkflowTagWarning();
+  }
+
+  function collectTagFilter() {
+    return {
+      key: document.getElementById("liveTagName")?.value || "",
+      value: document.getElementById("liveTagValue")?.value.trim() || "",
+    };
+  }
+
+  function workflowDefinitions() {
+    return (st.ctx && st.ctx.state && st.ctx.state.workflows) || [];
+  }
+
+  function findExactWorkflow(name) {
+    const wanted = String(name || "").trim().toLowerCase();
+    if (!wanted) return null;
+    return workflowDefinitions().find(
+      (workflow) => String(workflow && workflow.name || "").toLowerCase() === wanted,
+    ) || null;
+  }
+
+  function hideWorkflowSuggestions() {
+    const list = document.getElementById("liveWorkflowSuggestions");
+    const input = document.getElementById("liveWorkflowName");
+    if (list) {
+      list.hidden = true;
+      list.replaceChildren();
+    }
+    if (input) input.setAttribute("aria-expanded", "false");
+    if (input) input.removeAttribute("aria-activedescendant");
+    workflowSuggestActiveIndex = -1;
+  }
+
+  function setWorkflowSuggestionActive(index) {
+    const list = document.getElementById("liveWorkflowSuggestions");
+    const input = document.getElementById("liveWorkflowName");
+    const options = list ? [...list.querySelectorAll("[role=option]")] : [];
+    if (!options.length) return;
+    workflowSuggestActiveIndex = (index + options.length) % options.length;
+    options.forEach((option, optionIndex) => {
+      const active = optionIndex === workflowSuggestActiveIndex;
+      option.classList.toggle("active", active);
+      option.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    const activeOption = options[workflowSuggestActiveIndex];
+    if (input && activeOption) input.setAttribute("aria-activedescendant", activeOption.id);
+    activeOption?.scrollIntoView({ block: "nearest" });
+  }
+
+  function updateWorkflowTagWarning() {
+    const warning = document.getElementById("liveWorkflowTagWarning");
+    const workflowName = document.getElementById("liveWorkflowName")?.value || "";
+    const tagName = document.getElementById("liveTagName")?.value || "";
+    if (!warning) return;
+
+    const workflow = findExactWorkflow(workflowName);
+    if (!workflow || !tagName) {
+      warning.hidden = true;
+      warning.textContent = "";
+      return;
+    }
+    const compatibility = L().getWorkflowTagCompatibility(workflow, tagName);
+    if (!compatibility.known || compatibility.supported) {
+      warning.hidden = true;
+      warning.textContent = "";
+      return;
+    }
+
+    const detected = compatibility.tags.length
+      ? ` Detected: ${compatibility.tags.join(", ")}.`
+      : " No process tags were detected.";
+    warning.textContent = `Warning: ${workflow.name} does not set process tag "${tagName}".${detected}`;
+    warning.hidden = false;
+  }
+
+  function chooseWorkflowSuggestion(name) {
+    const input = document.getElementById("liveWorkflowName");
+    if (!input) return;
+    input.value = name;
+    hideWorkflowSuggestions();
+    updateWorkflowTagWarning();
+  }
+
+  function renderWorkflowSuggestions() {
+    const input = document.getElementById("liveWorkflowName");
+    const list = document.getElementById("liveWorkflowSuggestions");
+    if (!input || !list) return;
+    const query = input.value.trim();
+    if (query.length < 3 || findExactWorkflow(query)) {
+      hideWorkflowSuggestions();
+      updateWorkflowTagWarning();
+      return;
+    }
+
+    const suggestions = L().findWorkflowSuggestions(workflowDefinitions(), query, 12);
+    list.replaceChildren();
+    for (const [index, name] of suggestions.entries()) {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.id = `liveWorkflowSuggestion-${index}`;
+      option.className = "live-workflow-suggestion";
+      option.setAttribute("role", "option");
+      option.setAttribute("aria-selected", "false");
+      option.textContent = name;
+      option.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        chooseWorkflowSuggestion(name);
+      });
+      list.appendChild(option);
+    }
+
+    list.hidden = suggestions.length === 0;
+    input.setAttribute("aria-expanded", suggestions.length ? "true" : "false");
+    workflowSuggestActiveIndex = -1;
+    updateWorkflowTagWarning();
+  }
+
+  function scheduleWorkflowSuggestions() {
+    clearTimeout(workflowSuggestTimer);
+    workflowSuggestTimer = setTimeout(renderWorkflowSuggestions, 180);
+    updateWorkflowTagWarning();
+  }
+
+  function handleWorkflowSuggestionKeydown(event) {
+    const list = document.getElementById("liveWorkflowSuggestions");
+    const options = list && !list.hidden ? [...list.querySelectorAll("[role=option]")] : [];
+    if (event.key === "Escape") {
+      hideWorkflowSuggestions();
+      return;
+    }
+    if (!options.length || !["ArrowDown", "ArrowUp", "Enter"].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === "ArrowDown") {
+      setWorkflowSuggestionActive(workflowSuggestActiveIndex + 1);
+    } else if (event.key === "ArrowUp") {
+      setWorkflowSuggestionActive(workflowSuggestActiveIndex - 1);
+    } else if (workflowSuggestActiveIndex >= 0) {
+      chooseWorkflowSuggestion(options[workflowSuggestActiveIndex].textContent);
+    }
+  }
+
   function refreshEnvironmentControls() {
     const select = document.getElementById("liveEnv");
     const runButton = document.getElementById("liveRun");
@@ -413,6 +614,7 @@
     select.value = preferred;
     select.disabled = environments.length === 0;
     st.env = preferred;
+    renderTagControls();
     if (runButton) runButton.disabled = environments.length === 0;
     if (status) {
       if (environments.length) {
@@ -494,24 +696,64 @@
     bar.id = "liveToolbar";
     bar.className = "live-toolbar";
     bar.innerHTML = `
-      <div class="live-toolbar-field live-env-field"><label>ENV</label><select id="liveEnv"></select></div>
-      <button class="live-run live-icon-button" id="liveEnvUpload" type="button"
-        title="Load environment JSON" aria-label="Load environment JSON">${toolbarIcons.environment}</button>
       <input id="liveEnvFile" type="file" accept=".json,application/json" hidden />
-      <span id="liveEnvStatus" class="live-bridge-status bad" hidden></span>
-      <div class="live-toolbar-field live-tag-key-field"><label>Tag Key</label><input id="liveTagKey" value="ApplicationId" placeholder="ApplicationId"/></div>
-      <div class="live-toolbar-field live-tag-value-field"><label>Tag Value</label><input id="liveTagValue" placeholder="e.g. 2025130250930024"/></div>
-      <div class="live-toolbar-field live-date-field"><label>From</label><input type="text" id="liveFrom" placeholder="DD/MM/YYYY HH:mm"/></div>
-      <div class="live-toolbar-field live-date-field"><label>To</label><input type="text" id="liveTo" placeholder="DD/MM/YYYY HH:mm"/></div>
-      <div class="live-toolbar-actions">
-        <button class="live-run" id="liveRun" type="button">Run (bridge)</button>
-        <button class="live-run live-icon-button" id="liveImport" type="button"
-          title="Import trace JSON" aria-label="Import trace JSON">${toolbarIcons.import}</button>
-        <button class="live-run live-icon-button" id="liveExport" type="button"
-          title="Export trace JSON" aria-label="Export trace JSON">${toolbarIcons.export}</button>
-        <button class="live-run live-icon-button" id="liveView" type="button"></button>
-        <a href="bookmarklet/install.html" target="_blank" class="live-run live-bridge-link">Install Bridge</a>
-        <span id="liveBridge" class="live-bridge-status bad">bridge: off</span>
+      <div class="live-toolbar-row live-toolbar-query-row">
+        <button class="live-run live-icon-button" id="liveEnvUpload" type="button"
+          title="Load environment JSON" aria-label="Load environment JSON">${toolbarIcons.environment}</button>
+        <div class="live-toolbar-field live-env-field"><label>ENV</label><select id="liveEnv"></select></div>
+        <span id="liveEnvStatus" class="live-bridge-status bad" hidden></span>
+        <div class="live-toolbar-field live-tag-name-field">
+          <label>Tag Name</label>
+          <select id="liveTagName"></select>
+        </div>
+        <div class="live-toolbar-field live-tag-value-field">
+          <label>Tag Value</label>
+          <input id="liveTagValue" type="text" placeholder="Tag value" />
+        </div>
+        <div class="live-toolbar-field live-request-id-field">
+          <label>workflowRequestId</label>
+          <input id="liveWorkflowRequestId" type="text" placeholder="Optional request UUID" />
+        </div>
+        <div class="live-toolbar-field live-workflow-name-field">
+          <label>workflowName</label>
+          <div class="live-workflow-autocomplete">
+            <input id="liveWorkflowName" type="text" placeholder="Type at least 3 characters"
+              autocomplete="off" role="combobox" aria-autocomplete="list"
+              aria-controls="liveWorkflowSuggestions" aria-expanded="false" />
+            <div id="liveWorkflowSuggestions" class="live-workflow-suggestions"
+              role="listbox" hidden></div>
+            <div id="liveWorkflowTagWarning" class="live-workflow-tag-warning"
+              role="status" hidden></div>
+          </div>
+        </div>
+        <div class="live-toolbar-field live-status-field">
+          <label>Status</label>
+          <select id="liveStatus">
+            <option value="">All</option>
+            <option value="InProgress">InProgress</option>
+            <option value="Failed">Failed</option>
+            <option value="Completed">Completed</option>
+          </select>
+        </div>
+      </div>
+      <div class="live-toolbar-row live-toolbar-filter-row">
+        <div class="live-toolbar-field live-date-field"><label>From</label><input type="text" id="liveFrom" placeholder="DD/MM/YYYY HH:mm"/></div>
+        <div class="live-toolbar-field live-date-field"><label>To</label><input type="text" id="liveTo" placeholder="DD/MM/YYYY HH:mm"/></div>
+        <label class="live-auto-fetch-option"
+          title="Automatically load parent, child, and sibling processes after each search page.">
+          <input id="liveAutoRelationships" type="checkbox" />
+          <span>Auto-expand related processes</span>
+        </label>
+        <div class="live-toolbar-actions">
+          <button class="live-run" id="liveRun" type="button">Run (bridge)</button>
+          <button class="live-run live-icon-button" id="liveImport" type="button"
+            title="Import trace JSON" aria-label="Import trace JSON">${toolbarIcons.import}</button>
+          <button class="live-run live-icon-button" id="liveExport" type="button"
+            title="Export trace JSON" aria-label="Export trace JSON">${toolbarIcons.export}</button>
+          <button class="live-run live-icon-button" id="liveView" type="button"></button>
+          <a href="bookmarklet/install.html" target="_blank" class="live-run live-bridge-link">Install Bridge</a>
+          <span id="liveBridge" class="live-bridge-status bad">bridge: off</span>
+        </div>
       </div>`;
     document.querySelector(".toolbar").after(bar);
 
@@ -551,6 +793,15 @@
       const file = event.target.files?.[0];
       if (file) loadEnvironmentFile(file);
       event.target.value = "";
+    });
+    bar.querySelector("#liveTagName").addEventListener("change", updateTagValuePlaceholder);
+    const workflowNameInput = bar.querySelector("#liveWorkflowName");
+    workflowNameInput.addEventListener("input", scheduleWorkflowSuggestions);
+    workflowNameInput.addEventListener("focus", scheduleWorkflowSuggestions);
+    workflowNameInput.addEventListener("keydown", handleWorkflowSuggestionKeydown);
+    workflowNameInput.addEventListener("blur", () => {
+      setTimeout(hideWorkflowSuggestions, 120);
+      updateWorkflowTagWarning();
     });
     bar.querySelector("#liveRun").addEventListener("click", runBridge);
     bar.querySelector("#liveImport").addEventListener("click", importPrompt);
@@ -653,6 +904,7 @@
             const json = JSON.parse(evt.target.result);
             // Imported data is a static snapshot — no forward pagination.
             st.allDirectItems = [];
+            st.directTotal = null;
             st.hasMorePages = false;
             st.loadAllMode = false;
             loadGraph(L().normalizeResponse(json).items);
@@ -1437,17 +1689,39 @@
       document.getElementById("liveEnvUpload")?.click();
       return;
     }
-    if (!st.bridgeWin || st.bridgeWin.closed) { st.bridgeWin = window.open(env.consoleBase, "liveConsole"); setBridge("opened — click bookmarklet", false); return; }
-    if (!st.token) { setBridge("no token — click bookmarklet", false); return; }
+    if (!st.bridgeWin || st.bridgeWin.closed) {
+      st.bridgeWin = window.open(env.consoleBase, "liveConsole");
+      setBridge("opened — click bookmarklet", false);
+      return;
+    }
+    if (!st.token) {
+      setBridge("no token — click bookmarklet", false);
+      return;
+    }
     configureBridge();
-    const tagKey = document.getElementById("liveTagKey").value.trim() || "ApplicationId";
-    const tagVal = document.getElementById("liveTagValue").value.trim();
-    st.lastAppId = tagVal;
+
+    const tag = collectTagFilter();
+    const workflowRequestId = document.getElementById("liveWorkflowRequestId").value.trim();
+    const workflowName = document.getElementById("liveWorkflowName").value.trim();
+    const status = document.getElementById("liveStatus").value;
+    const queryOpts = {
+      workflowRequestId,
+      workflowName,
+      status,
+      tagKey: tag.key,
+      tagValue: tag.value,
+    };
+    if (!L().hasRequiredProcessFilter(queryOpts)) {
+      window.alert("Enter at least one search filter: workflowRequestId, workflowName, or Tag Value.");
+      document.getElementById("liveTagValue")?.focus();
+      return;
+    }
+    st.autoFetchRelationships = document.getElementById("liveAutoRelationships").checked;
+    st.lastAppId = tag.value || null;
     st.importedFileName = null;
     if (typeof window.updatePageTitle === "function") {
       window.updatePageTitle();
     }
-    const isUuid = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(tagVal);
 
     const fromVal = document.getElementById("liveFrom").value.trim();
     const toVal = document.getElementById("liveTo").value.trim();
@@ -1472,14 +1746,8 @@
       toUtc = toDate.toISOString().replace(/\.\d+Z$/, ".000Z");
     }
 
-    const queryOpts = isUuid
-      ? { parentRequestId: tagVal }
-      : {
-        tagKey: tagKey,
-        tagValue: tagVal,
-        fromDate: fromUtc,
-        toDate: toUtc
-      };
+    queryOpts.fromDate = fromUtc;
+    queryOpts.toDate = toUtc;
     lastQueryOpts = queryOpts;
 
     allCollectedItems = [];
@@ -1493,6 +1761,7 @@
     st.incrementalLoad = false;
     st.scrollBottomGap = null;
     st.allDirectItems = [];
+    st.directTotal = null;
     st.effPageSize = 0;
     st.lastDirectPageCount = 0;
     st.directPagesFetched = 0;
@@ -1534,7 +1803,8 @@
       if (m.ok && m.json) {
         if (isDirectPage) {
           activeAutoFetches = Math.max(0, activeAutoFetches - 1); tickProgress();
-          const fetchedItems = L().normalizeResponse(m.json).items;
+          const response = L().normalizeResponse(m.json);
+          const fetchedItems = response.items;
 
           // Merge forward, deduped by requestId.
           const existingIds = new Set(allCollectedItems.map(x => x.requestId));
@@ -1549,15 +1819,19 @@
           if (st.effPageSize === 0) st.effPageSize = fetchedItems.length;
           st.lastDirectPageCount = fetchedItems.length;
           st.directPagesFetched = (st.directPagesFetched || 0) + 1;
-          // There are more pages only if this page was full AND brought at least
-          // one NEW item. The new-item guard stops runaway pagination when the API
-          // returns overlapping/repeated pages (its total "keeps expanding"): without
-          // it, every page looks full so Load all loops forever while the process
-          // count stays frozen on the duplicates. MAX_DIRECT_PAGES is a hard backstop.
-          st.hasMorePages = st.effPageSize > 0
-            && fetchedItems.length === st.effPageSize
-            && newItems.length > 0
-            && st.directPagesFetched < MAX_DIRECT_PAGES;
+          if (Number.isFinite(response.pagination?.totalItems)) {
+            st.directTotal = response.pagination.totalItems;
+          }
+          // API metadata is authoritative when available. The item-count fallback
+          // supports older responses, while the new-item guard prevents repeated
+          // pages from making Load all loop forever.
+          st.hasMorePages = L().hasMoreProcessPages(response, {
+            loadedCount: st.allDirectItems.length,
+            newItemCount: newItems.length,
+            effectivePageSize: st.effPageSize,
+            pagesFetched: st.directPagesFetched,
+            maxPages: MAX_DIRECT_PAGES
+          });
 
           // Re-render the hierarchy. For an incremental "Load earlier" page,
           // older rows prepend at the top — keep the viewport anchored.
@@ -1567,8 +1841,11 @@
             canvas.scrollTop = Math.max(0, canvas.scrollHeight - st.scrollBottomGap);
           }
 
-          // Interleaved expansion: resolve this page's parents/children/siblings.
-          fetchChildren(newItems);
+          // Relationship expansion is opt-in. Direct search results render first;
+          // users can expand manually from the diagram header when auto-fetch is off.
+          if (st.autoFetchRelationships) {
+            fetchChildren(newItems);
+          }
           updateLoadingState();
         } else if (isChild) {
           activeAutoFetches = Math.max(0, activeAutoFetches - 1); tickProgress();
@@ -2236,9 +2513,14 @@
     if (!st.graph || activeAutoFetches > 0 || requestQueue.length > 0) return;
 
     const exportBtn = document.getElementById("liveExport");
-    const tagKey = document.getElementById("liveTagKey")?.value || "";
-    const tagValue = document.getElementById("liveTagValue")?.value || "";
-    const fileName = L().buildTraceExportFileName(tagKey, tagValue, st.lastAppId || st.selected);
+    const primaryTag = collectTagFilter();
+    const workflowRequestId = document.getElementById("liveWorkflowRequestId")?.value || "";
+    const workflowName = document.getElementById("liveWorkflowName")?.value || "";
+    const fileName = L().buildTraceExportFileName(
+      (primaryTag.key && primaryTag.value) ? primaryTag.key : (workflowRequestId ? "workflowRequestId" : "workflowName"),
+      primaryTag.value || workflowRequestId || workflowName,
+      st.lastAppId || st.selected,
+    );
     let objectUrl = null;
 
     if (exportBtn) exportBtn.disabled = true;
@@ -2307,6 +2589,8 @@
       renderResults(); renderView(); renderDetail(); renderPaginationControls();
     },
     deactivate() {
+      clearTimeout(workflowSuggestTimer);
+      hideWorkflowSuggestions();
       document.body.classList.remove("live-active");
       const pc = document.getElementById("livePaginationControls");
       if (pc) { pc.style.display = "none"; pc.innerHTML = ""; }

@@ -3,24 +3,113 @@
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  gap: 6px;
-  align-items: end;
-  flex-wrap: wrap;
+  gap: 8px;
+  flex-direction: column;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border, #283349);
   background: var(--panel, #161d2e);
 }
 body.live-active .live-toolbar { display: flex; }
+body.live-active .workspace {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+body.live-active .workspace > .toolbar {
+  display: none;
+}
+.live-toolbar-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
 .live-toolbar label { font-size: 11px; color: #9fb3d1; display: block; margin-bottom: 3px; }
 .live-toolbar input, .live-toolbar select { background: #0f1420; border: 1px solid #2f3b54;
   color: #e6ebf5; border-radius: 6px; padding: 6px 8px; font: inherit; box-sizing: border-box; max-width: 100%; }
 .live-toolbar-field { flex: 0 0 auto; min-width: 0; }
 .live-env-field { width: 88px; }
-.live-tag-key-field { width: 112px; }
-.live-tag-value-field { flex: 1 1 180px; min-width: 150px; max-width: 280px; }
+.live-env-field select { width: 100%; }
+.live-request-id-field { flex: 1 1 190px; min-width: 180px; max-width: 260px; }
+.live-workflow-name-field { flex: 1 1 210px; min-width: 190px; max-width: 300px; }
+.live-request-id-field input,
+.live-workflow-name-field input { width: 100%; }
+.live-workflow-autocomplete {
+  position: relative;
+}
+.live-workflow-suggestions,
+.live-workflow-tag-warning {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 80;
+  border-radius: 6px;
+  box-shadow: 0 12px 24px rgba(2, 6, 23, .32);
+}
+.live-workflow-suggestions {
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid #3b4a67;
+  background: #111827;
+}
+.live-workflow-suggestion {
+  display: block;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #dbeafe;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.live-workflow-suggestion:hover,
+.live-workflow-suggestion.active {
+  background: #1d4ed8;
+  color: #fff;
+}
+.live-workflow-tag-warning {
+  padding: 7px 9px;
+  border: 1px solid rgba(245, 158, 11, .55);
+  background: #2b2112;
+  color: #fbbf24;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.live-workflow-suggestions[hidden],
+.live-workflow-tag-warning[hidden] {
+  display: none;
+}
+.live-status-field { width: 105px; }
+.live-status-field select { width: 100%; }
+.live-tag-name-field { width: 125px; }
+.live-tag-name-field select { width: 100%; }
+.live-tag-value-field { flex: 1 1 145px; min-width: 130px; max-width: 210px; }
 .live-tag-value-field input { width: 100%; }
 .live-date-field { width: 132px; }
 .live-date-field input { width: 100%; }
+.live-auto-fetch-option {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  margin: 0 !important;
+  padding: 0 4px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.live-auto-fetch-option input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
 .live-toolbar .live-run { background: #2563eb; color: #fff; border: 0; border-radius: 6px;
   padding: 8px 14px; font-weight: 600; cursor: pointer; }
 .live-toolbar-actions {
@@ -80,6 +169,16 @@ body.live-active .live-toolbar { display: flex; }
   }
   #liveEnvStatus {
     flex-basis: 160px;
+  }
+}
+@media (max-width: 720px) {
+  .live-toolbar-field,
+  .live-request-id-field,
+  .live-workflow-name-field,
+  .live-tag-value-field {
+    flex: 1 1 100%;
+    width: auto;
+    max-width: none;
   }
 }
 .live-bridge-status.ok { color: #5fd38a; background: rgba(95,211,138,.15); }
@@ -144,6 +243,10 @@ body.live-active .diagram-canvas {
   background: #fff;
   color: #dc2626;
   border-color: #dc2626;
+}
+.live-pagination-header .live-page-btn-related {
+  background: #7c3aed;
+  border-color: #7c3aed;
 }
 
 /* Header styling */

@@ -23,6 +23,51 @@
     return url.origin;
   }
 
+  function normalizeTags(config) {
+    const source = config?.liveApi?.tags;
+    if (source === undefined) {
+      return {
+        defaultTag: "ApplicationId",
+        tags: [{
+          name: "ApplicationId",
+          label: "ApplicationId",
+          placeholder: "e.g. 2025130250930024",
+        }],
+      };
+    }
+    if (!Array.isArray(source)) {
+      throw new Error("liveApi.tags must be an array.");
+    }
+    if (!source.length) {
+      throw new Error("liveApi.tags must contain at least one tag.");
+    }
+
+    const names = new Set();
+    const tags = source.map((tag, index) => {
+      const name = String(tag?.name || "").trim();
+      if (!name || !/^[A-Za-z0-9_.-]+$/.test(name)) {
+        throw new Error(`liveApi.tags[${index}] has an invalid name.`);
+      }
+      const normalizedName = name.toLowerCase();
+      if (names.has(normalizedName)) {
+        throw new Error(`Live API tag "${name}" is duplicated.`);
+      }
+      names.add(normalizedName);
+      return {
+        name,
+        label: String(tag?.label || name).trim() || name,
+        placeholder: String(tag?.placeholder || "").trim(),
+      };
+    });
+
+    const requestedDefault = String(config?.liveApi?.defaultTag || "").trim();
+    const legacyDefault = source.find((tag) => tag?.is_show === true)?.name;
+    const defaultTag = tags.find((tag) => tag.name === requestedDefault)?.name
+      || tags.find((tag) => tag.name === legacyDefault)?.name
+      || tags[0].name;
+    return { defaultTag, tags };
+  }
+
   function validate(config) {
     if (!config || !Array.isArray(config.environments) || !config.environments.length) {
       throw new Error("Environment JSON must contain a non-empty environments array.");
@@ -47,9 +92,10 @@
 
     const requestedDefault = String(config.defaultEnv || "").trim().toLowerCase();
     return {
-      schemaVersion: 1,
+      schemaVersion: Number(config.schemaVersion) || 1,
       defaultEnv: keys.has(requestedDefault) ? requestedDefault : environments[0].key,
       environments,
+      liveApi: normalizeTags(config),
     };
   }
 
