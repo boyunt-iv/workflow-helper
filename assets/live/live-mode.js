@@ -25,6 +25,7 @@
   let autoFetchCount = 0;
   let activeAutoFetches = 0;
   let loadingActive = false;
+  const jsonPayloads = new Map();
   // Requested direct-list page size. The *effective* size (st.effPageSize) is
   // captured from page 1 in case the server caps it below this value.
   const DIRECT_PAGE_SIZE = 25;
@@ -120,6 +121,7 @@
   function enableButtons(enabled) {
     const runBtn = document.getElementById("liveRun");
     const importBtn = document.getElementById("liveImport");
+    const exportBtn = document.getElementById("liveExport");
     if (runBtn) {
       runBtn.disabled = !enabled;
       runBtn.textContent = enabled ? "Run (bridge)" : "Running... ⟳";
@@ -128,6 +130,10 @@
     if (importBtn) {
       importBtn.disabled = !enabled;
       importBtn.style.opacity = enabled ? "" : "0.7";
+    }
+    if (exportBtn) {
+      exportBtn.disabled = !enabled;
+      exportBtn.style.opacity = enabled ? "" : "0.7";
     }
   }
 
@@ -154,16 +160,17 @@
     canvas.scrollTo({ top: 0, left: 0 });
   }
 
-  function showLoadingOverlay(message) {
+  function showLoadingOverlay(message, options) {
+    options = options || {};
     const el = document.getElementById("loadingOverlay");
     if (el) {
       el.hidden = false;
       const titleEl = document.getElementById("loadingTitle");
-      if (titleEl) titleEl.textContent = "Fetching Live Trace Data";
+      if (titleEl) titleEl.textContent = options.title || "Fetching Live Trace Data";
       const msgEl = document.getElementById("loadingMessage");
       if (msgEl) msgEl.textContent = message;
       const stopBtn = document.getElementById("stopFetchBtn");
-      if (stopBtn) stopBtn.style.display = "block";
+      if (stopBtn) stopBtn.style.display = options.stoppable === false ? "none" : "block";
     }
   }
 
@@ -912,16 +919,83 @@
       return `<span class="dim" style="font-size:11px;">(Empty payload)</span>`;
     }
 
+    let copyValue = payload;
+    if (typeof payload === "string") {
+      try {
+        copyValue = JSON.parse(payload);
+      } catch (_) {
+        copyValue = payload;
+      }
+    }
+    const copyText = typeof copyValue === "string"
+      ? copyValue
+      : JSON.stringify(copyValue, null, 2);
+    jsonPayloads.set(containerId, copyText);
+
+    const copyButton = `
+      <button type="button" class="json-copy-btn"
+        onclick="window.copyJsonPayload('${escapeHtml(containerId)}', this)"
+        aria-label="Copy JSON to clipboard" title="Copy JSON to clipboard">COPY</button>
+    `;
+
     if (typeof payload !== "object" || payload === null) {
-      return `<pre class="json-code">${escapeHtml(String(payload))}</pre>`;
+      return `
+        <div class="json-block">
+          <div class="json-block-toolbar">${copyButton}</div>
+          <pre id="${containerId}" class="json-code">${escapeHtml(String(payload))}</pre>
+        </div>
+      `;
     }
 
     return `
-      <div id="${containerId}" class="json-tree-container">
-        ${renderJsonTree(payload)}
+      <div class="json-block">
+        <div class="json-block-toolbar">${copyButton}</div>
+        <div id="${containerId}" class="json-tree-container">
+          ${renderJsonTree(payload)}
+        </div>
       </div>
     `;
   }
+
+  async function writeClipboardText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    const copied = document.execCommand("copy");
+    textarea.remove();
+    if (!copied) throw new Error("Browser clipboard command failed");
+  }
+
+  window.copyJsonPayload = async function (containerId, button) {
+    const text = jsonPayloads.get(containerId);
+    if (text === undefined) return;
+
+    const originalText = button ? button.textContent : "";
+    if (button) button.disabled = true;
+    try {
+      await writeClipboardText(text);
+      if (button) button.textContent = "COPIED";
+    } catch (error) {
+      console.error("Unable to copy JSON", error);
+      if (button) button.textContent = "FAILED";
+    } finally {
+      if (button) {
+        setTimeout(() => {
+          button.textContent = originalText;
+          button.disabled = false;
+        }, 1200);
+      }
+    }
+  };
 
   window.expandAllJson = function (containerId) {
     const container = document.getElementById(containerId);
@@ -2158,13 +2232,46 @@
     return res;
   }
 
-  window.exportTraceJson = function () {
-    if (!st.graph) return;
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(st.graph.nodes, null, 2));
-    const dlAnchorElem = document.createElement('a');
-    dlAnchorElem.setAttribute("href", dataStr);
-    dlAnchorElem.setAttribute("download", `trace_${st.selected || "export"}.json`);
-    dlAnchorElem.click();
+  window.exportTraceJson = async function () {
+    if (!st.graph || activeAutoFetches > 0 || requestQueue.length > 0) return;
+
+    const exportBtn = document.getElementById("liveExport");
+    const tagKey = document.getElementById("liveTagKey")?.value || "";
+    const tagValue = document.getElementById("liveTagValue")?.value || "";
+    const fileName = L().buildTraceExportFileName(tagKey, tagValue, st.lastAppId || st.selected);
+    let objectUrl = null;
+
+    if (exportBtn) exportBtn.disabled = true;
+    showLoadingOverlay("Preparing trace data for download...", {
+      title: "Exporting Trace JSON",
+      stoppable: false
+    });
+
+    try {
+      await new Promise((resolve) => {
+        const schedule = window.requestAnimationFrame || ((callback) => setTimeout(callback, 0));
+        schedule(() => setTimeout(resolve, 0));
+      });
+
+      const json = JSON.stringify(st.graph.nodes, null, 2);
+      const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+      objectUrl = URL.createObjectURL(blob);
+
+      const downloadLink = document.createElement("a");
+      downloadLink.href = objectUrl;
+      downloadLink.download = fileName;
+      downloadLink.hidden = true;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      downloadLink.remove();
+    } catch (error) {
+      console.error("Unable to export trace JSON", error);
+      window.alert("Unable to export trace JSON. Please try again.");
+    } finally {
+      if (objectUrl) setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      hideLoadingOverlay();
+      if (exportBtn) exportBtn.disabled = false;
+    }
   };
 
   // Event delegation for JSON tree toggling

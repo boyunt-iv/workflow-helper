@@ -94,7 +94,22 @@
     return msBase.replace(/\/+$/, "") + "/runtime/api/report/process?" + p.toString();
   }
 
-  const api = { normalizeProcess, normalizeResponse, buildProcessUrl };
+  function buildTraceExportFileName(tagKey, tagValue, fallback) {
+    const safePart = (value) => String(value || "")
+      .trim()
+      .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
+      .replace(/\s+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^[_.]+|[_.]+$/g, "");
+
+    const key = safePart(tagKey);
+    const value = safePart(tagValue);
+    const fallbackValue = safePart(fallback) || "export";
+    const suffix = key && value ? `${key}_${value}` : (value || fallbackValue);
+    return `trace_${suffix}.json`;
+  }
+
+  const api = { normalizeProcess, normalizeResponse, buildProcessUrl, buildTraceExportFileName };
   root.WorkflowLive = Object.assign(root.WorkflowLive || {}, api);
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -679,6 +679,39 @@ body.live-active .live-warning-banner {
 }
 
 /* JSON Tree Viewer */
+.json-block {
+  position: relative;
+}
+
+.json-block-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: 4px 0 -2px;
+}
+
+.json-copy-btn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: #2563eb;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 4px;
+}
+
+.json-copy-btn:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.json-copy-btn:disabled {
+  cursor: default;
+  opacity: 0.7;
+  text-decoration: none;
+}
+
 .json-tree-container {
   font-family: Consolas, Monaco, "Courier New", monospace;
   font-size: 12px;
