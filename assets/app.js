@@ -5166,10 +5166,10 @@ function findKeyValueRecursive(obj, searchKey) {
   return undefined;
 }
 
-function extractAndEvaluateVariables(script, stepInput, stepOutput, processContext) {
+function extractAndEvaluateVariables(script, stepInput, stepOutput, processContext, executedSteps = []) {
   if (!script) return null;
 
-  const matches = script.match(/\b(input|globalVariables|global|variables|context|data)\.[a-zA-Z0-9_$]+(\.[a-zA-Z0-9_$]+)*/gi) || [];
+  const matches = script.match(/\b(input|globalVariables|global|variables|context|data|steps)(\.[a-zA-Z0-9_$]+|\?\.[a-zA-Z0-9_$]+|\[['"]?[a-zA-Z0-9_$]+['"]?\]|\?\.\[['"]?[a-zA-Z0-9_$]+['"]?\])*/gi) || [];
   const results = {};
   const searchPayloads = [
     stepInput,
@@ -5179,9 +5179,44 @@ function extractAndEvaluateVariables(script, stepInput, stepOutput, processConte
   ].filter(p => p !== null && p !== undefined);
 
   const lookupValue = (path) => {
-    const parts = path.split('.');
+    const normalizedPath = path.replaceAll(/\[['"]?([a-zA-Z0-9_$]+)['"]?\]/g, ".$1");
+    const parts = normalizedPath.split(/\??\./);
     const prefixes = ["input", "globalvariables", "global", "variables", "context", "data"];
     
+    if (parts.length > 1 && parts[0].toLowerCase() === "steps") {
+      const stepName = parts[1].toLowerCase();
+      const remainingPath = parts.slice(2);
+
+      const matchedStep = executedSteps.find(step => {
+        const name = step.Name || step.StepName || step.ActivityName || step.NodeName || "";
+        return name.toLowerCase() === stepName;
+      });
+
+      if (matchedStep) {
+        const parsePayload = (val) => {
+          if (val === null || val === undefined) return null;
+          if (typeof val === "string") {
+            try { return JSON.parse(val); } catch (_) { return val; }
+          }
+          return val;
+        };
+        const payload = parsePayload(matchedStep.OutputJson || matchedStep.Output || matchedStep.Result || matchedStep.WorkflowOutputJson || matchedStep.workflowOutputJson);
+
+        let current = payload;
+        let found = true;
+        for (const part of remainingPath) {
+          if (current && typeof current === 'object' && part in current) {
+            current = current[part];
+          } else {
+            found = false;
+            break;
+          }
+        }
+        if (found) return current;
+      }
+      return undefined;
+    }
+
     let keyPath = parts;
     if (parts.length > 1 && prefixes.includes(parts[0].toLowerCase())) {
       keyPath = parts.slice(1);
@@ -5434,7 +5469,7 @@ function renderLiveExecDetail(workflow) {
 
       const logicHtml = `<pre style="margin: 0; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid var(--line); border-radius: 4px; font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; color: var(--text);">${escapeHtml(node.conditionScript)}</pre>`;
 
-      const evaluatedVars = extractAndEvaluateVariables(node.conditionScript, inputJson, outputJson, processContext);
+      const evaluatedVars = extractAndEvaluateVariables(node.conditionScript, inputJson, outputJson, processContext, steps);
       let varsHtml = "";
       if (evaluatedVars) {
         let rows = "";
@@ -5447,9 +5482,9 @@ function renderLiveExecDetail(workflow) {
             valText = String(val);
           }
           rows += `
-            <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed var(--line); padding: 3px 0;">
-              <span style="font-family: monospace; color: var(--text-muted, #7e8aa3);">${escapeHtml(key)}</span>
-              <strong style="font-family: monospace; color: var(--accent);">${escapeHtml(valText)}</strong>
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px dashed var(--line); padding: 3px 0; gap: 8px;">
+              <span style="font-family: monospace; color: var(--text-muted, #7e8aa3); word-break: break-all; min-width: 0; flex-grow: 1;">${escapeHtml(key)}</span>
+              <strong style="font-family: monospace; color: var(--accent); flex-shrink: 0; text-align: right;">${escapeHtml(valText)}</strong>
             </div>
           `;
         }
