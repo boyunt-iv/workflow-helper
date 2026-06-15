@@ -367,14 +367,14 @@ button:disabled {
 
 .content-grid {
   display: grid;
-  grid-template-columns: var(--results-width, 340px) 6px minmax(520px, 1fr) 6px var(--detail-width, 420px);
+  grid-template-columns: var(--results-width, 340px) 6px minmax(0, 1fr) 6px var(--detail-width, 420px);
   min-height: 0;
   overflow: hidden;
   transition: grid-template-columns 0.22s ease;
 }
 
 .content-grid.results-hidden {
-  grid-template-columns: 0 0 minmax(520px, 1fr) 6px var(--detail-width, 420px);
+  grid-template-columns: 0 0 minmax(0, 1fr) 6px var(--detail-width, 420px);
 }
 
 .content-grid.diagram-hidden {
@@ -382,11 +382,11 @@ button:disabled {
 }
 
 .content-grid.detail-hidden {
-  grid-template-columns: var(--results-width, 340px) 6px minmax(520px, 1fr) 0 0;
+  grid-template-columns: var(--results-width, 340px) 6px minmax(0, 1fr) 0 0;
 }
 
 .content-grid.results-hidden.detail-hidden {
-  grid-template-columns: 0 0 minmax(520px, 1fr) 0 0;
+  grid-template-columns: 0 0 minmax(0, 1fr) 0 0;
 }
 
 .content-grid.results-hidden.diagram-hidden {
@@ -417,6 +417,8 @@ button:disabled {
 }
 
 .detail-pane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   border-right: 0;
 }
 
@@ -1344,7 +1346,8 @@ body.diagram-panning {
 }
 
 .detail-content {
-  height: calc(100vh - 109px);
+  min-height: 0;
+  height: auto;
   overflow: auto;
   padding: 14px;
 }

@@ -1002,6 +1002,11 @@ function bindEvents() {
   });
 
   initResizers();
+  window.addEventListener("resize", () => {
+    const previousDetailWidth = state.sizes.detail;
+    applyLayoutState();
+    if (state.sizes.detail !== previousDetailWidth) saveState();
+  });
   initDiagramPan();
 }
 
@@ -1168,7 +1173,15 @@ function isInteractiveDiagramTarget(target) {
   return false;
 }
 
+function detailResizeMax() {
+  const gridWidth = els.contentGrid?.getBoundingClientRect().width || window.innerWidth;
+  const resultsWidth = state.panes.results ? state.sizes.results + 6 : 0;
+  const resizableWidth = Math.max(280, gridWidth - resultsWidth - 6);
+  return Math.max(280, Math.floor(resizableWidth * 0.9));
+}
+
 function applyLayoutState() {
+  state.sizes.detail = clamp(state.sizes.detail, 280, detailResizeMax());
   document.documentElement.style.setProperty("--rail-width", `${state.sizes.rail}px`);
   document.documentElement.style.setProperty("--results-width", `${state.sizes.results}px`);
   document.documentElement.style.setProperty("--detail-width", `${state.sizes.detail}px`);
@@ -1197,7 +1210,7 @@ function initResizers() {
         } else if (target === "results") {
           state.sizes.results = clamp(startSizes.results + dx, 220, 620);
         } else if (target === "detail") {
-          state.sizes.detail = clamp(startSizes.detail - dx, 280, 720);
+          state.sizes.detail = clamp(startSizes.detail - dx, 280, detailResizeMax());
         }
         applyLayoutState();
       };
@@ -5014,6 +5027,30 @@ function renderInbound(workflow) {
   `;
 }
 
+function renderLiveExecProcessContext(processContext, prefix) {
+  if (!processContext) return "";
+  const renderer = window.WorkflowLive?.renderPayloadTable;
+  if (typeof renderer !== "function") return "";
+
+  const blocks = [
+    ["Global Variables", processContext.globalVariables, `${prefix}GlobalVariables`],
+    ["Workflow Input", processContext.workflowInput, `${prefix}WorkflowInput`],
+  ].filter(([, payload]) => payload !== null && payload !== undefined);
+
+  if (blocks.length === 0) return "";
+  return `
+    <section class="live-process-context" style="margin-bottom:16px;">
+      <h4 style="margin:0 0 10px; color:var(--accent);">Process Entry Context</h4>
+      ${blocks.map(([title, payload, containerId]) => `
+        <div style="margin-bottom:14px;">
+          <div style="font-size:11px; font-weight:700; margin-bottom:6px;">${title}</div>
+          ${renderer(payload, containerId)}
+        </div>
+      `).join("")}
+    </section>
+  `;
+}
+
 function renderLiveExecDetail(workflow) {
   if (state.liveHighlightedWorkflow !== workflow.name) {
     return `
@@ -5039,6 +5076,9 @@ function renderLiveExecDetail(workflow) {
       </div>
     `;
   }
+
+  const processContext = window.LivePresentation?.getProcessContext(processNode) || null;
+  const entryNode = window.LivePresentation?.findWorkflowEntryNode(workflow) || workflow.nodes[0] || null;
 
   // If no node is selected in the diagram
   if (!state.selectedNodeId) {
@@ -5081,6 +5121,10 @@ function renderLiveExecDetail(workflow) {
   const nodeIdLower = nodeId.toLowerCase().trim();
   const node = workflow.nodes.find(n => n.id === nodeId);
   const nodeCallNameLower = node && node.callName ? node.callName.toLowerCase().trim() : null;
+  const isEntryNode = entryNode?.id === nodeId;
+  const processContextHtml = isEntryNode
+    ? renderLiveExecProcessContext(processContext, "liveExecEntry")
+    : "";
 
   const matchedSteps = steps.filter(step => {
     const stepName = step.Name || step.StepName || step.ActivityName || step.NodeName;
@@ -5104,6 +5148,17 @@ function renderLiveExecDetail(workflow) {
       (node && node.callName && state.liveExecutedNodes.has(nodeCallNameLower))
     );
 
+    if (processContextHtml) {
+      return `
+        <div style="padding:16px;">
+          <h3 style="margin:0 0 4px; color:var(--accent);">Live Execution Details</h3>
+          <div class="dim" style="font-size:11px; margin-bottom:12px;">Entry node: <strong>${escapeHtml(nodeId)}</strong></div>
+          ${processContextHtml}
+          <p class="dim" style="font-size:11px;">No separate execution step was recorded for this entry node.</p>
+        </div>
+      `;
+    }
+
     return `
       <div style="padding: 20px; text-align: center;" class="empty-state">
         <p>No execution step was recorded for node <strong>${escapeHtml(nodeId)}</strong>.</p>
@@ -5118,6 +5173,7 @@ function renderLiveExecDetail(workflow) {
         <span>Live Execution Details</span>
       </h3>
       <div class="dim" style="font-size:11px; margin-bottom:12px;">Node: <strong>${escapeHtml(nodeId)}</strong>${node && node.callName && node.callName !== nodeId ? ` (${escapeHtml(node.callName)})` : ""}</div>
+      ${processContextHtml}
   `;
 
   matchedSteps.forEach((step, idx) => {
