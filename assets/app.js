@@ -5455,7 +5455,10 @@ function renderLiveExecDetail(workflow) {
         }
         varsHtml = `
           <div style="margin-top: 10px;">
-            <strong style="font-size: 11px; display: block; margin-bottom: 4px; color: var(--text-muted);">Variable Values:</strong>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <strong style="font-size: 11px; color: var(--text-muted);">Variable Values:</strong>
+              <span style="font-size: 10px; color: var(--text-muted); opacity: 0.8;" title="Intermediate snapshots are not present in this trace. Values represent the final state at the end of the workflow.">ℹ️ Process End State</span>
+            </div>
             <div style="background: rgba(255,255,255,0.01); border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px;">
               ${rows}
             </div>
