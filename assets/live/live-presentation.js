@@ -57,10 +57,43 @@
     return nodes.find((node) => !inboundNodeIds.has(node.id)) || nodes[0];
   }
 
+  function normalizeMatchValue(value) {
+    return value == null ? "" : String(value).toLowerCase().trim();
+  }
+
+  function matchesWorkflowNodeStep(node, step) {
+    if (!node || !step) return false;
+    const nodeId = normalizeMatchValue(node.id);
+    const callName = normalizeMatchValue(node.callName);
+    const stepName = normalizeMatchValue(
+      step.Name || step.StepName || step.ActivityName || step.NodeName,
+    );
+    const activityId = normalizeMatchValue(
+      step.ActivityId || step.StepId || step.NodeId,
+    );
+
+    return (
+      stepName === nodeId ||
+      activityId === nodeId ||
+      (callName && stepName === callName) ||
+      (callName && activityId === callName)
+    );
+  }
+
+  function getNodeExecutionCount(node, steps) {
+    if (!node || !Array.isArray(steps)) return 0;
+    return steps.reduce(
+      (count, step) => count + (matchesWorkflowNodeStep(node, step) ? 1 : 0),
+      0,
+    );
+  }
+
   return {
     extractPayload,
     findWorkflowEntryNode,
+    getNodeExecutionCount,
     getProcessContext,
+    matchesWorkflowNodeStep,
     parseMaybeJson,
   };
 });

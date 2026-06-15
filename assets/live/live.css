@@ -1392,6 +1392,25 @@ body.live-active .live-warning-banner {
   fill: #10b981 !important;
 }
 
+.node-repeat-badge {
+  pointer-events: none;
+}
+
+.node-repeat-badge-shape {
+  fill: #172033;
+  stroke: #60a5fa;
+  stroke-width: 2;
+  filter: drop-shadow(0 2px 4px rgba(15, 23, 42, 0.22));
+}
+
+.node-repeat-badge-text {
+  fill: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
 /* Danger/Failed execution path highlights (Red) */
 .step-highlight-node.danger rect {
   stroke: #ef4444 !important;
