@@ -364,7 +364,8 @@
             } else {
               const liveInput = extractPayload(n.raw, ["Input", "Variables", "WorkflowInputJson", "workflowInputJson"]);
               const liveOutput = extractPayload(n.raw, ["Output", "Result", "WorkflowOutputJson", "workflowOutputJson"]);
-              match = hasKeyRecursive(liveInput, text) || hasKeyRecursive(liveOutput, text);
+              const globalVars = extractPayload(n.raw, ["GlobalVariablesJson", "GlobalVariables"]);
+              match = hasKeyRecursive(liveInput, text) || hasKeyRecursive(liveOutput, text) || hasKeyRecursive(globalVars, text);
             }
           } else if (type === "input") {
             const liveInput = extractPayload(n.raw, ["Input", "Variables", "WorkflowInputJson", "workflowInputJson"]);
@@ -381,8 +382,9 @@
           } else if (type === "value") {
             const liveInput = extractPayload(n.raw, ["Input", "Variables", "WorkflowInputJson", "workflowInputJson"]);
             const liveOutput = extractPayload(n.raw, ["Output", "Result", "WorkflowOutputJson", "workflowOutputJson"]);
+            const globalVars = extractPayload(n.raw, ["GlobalVariablesJson", "GlobalVariables"]);
             
-            let inPayloads = hasValueRecursive(liveInput, text) || hasValueRecursive(liveOutput, text);
+            let inPayloads = hasValueRecursive(liveInput, text) || hasValueRecursive(liveOutput, text) || hasValueRecursive(globalVars, text);
             
             let inTags = false;
             const rawObj = n.raw || {};
