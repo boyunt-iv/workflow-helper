@@ -3997,11 +3997,12 @@ function renderNode(node, offsetX, offsetY, isActive, dbOps = []) {
 
   const tooltip = zoralNodeTooltip(node);
 
-  const isCodeMatch = state.searchScope === "code" && state.query && (
-    matches(node.inputScript || "", state.query) ||
-    matches(node.outputScript || "", state.query) ||
-    matches(node.conditionScript || "", state.query)
-  );
+  const isCodeMatch = state.searchScope === "code" && state.query && 
+    (!state.selectedWorkflow || state.query.toLowerCase().trim() !== state.selectedWorkflow.name.toLowerCase().trim()) && (
+      matches(node.inputScript || "", state.query) ||
+      matches(node.outputScript || "", state.query) ||
+      matches(node.conditionScript || "", state.query)
+    );
   const matchCodeClass = isCodeMatch ? "match-code" : "";
 
   if (node.type === "zbo-caller") {
@@ -5104,6 +5105,139 @@ function renderLiveExecProcessContext(processContext, prefix) {
   `;
 }
 
+function findExecutedBranch(nodeId, step, workflow, steps) {
+  const node = workflow?.nodes.find(n => n.id === nodeId);
+  if (!node || !workflow || !steps) return null;
+
+  const currentIdx = steps.findIndex(s => s === step);
+  if (currentIdx === -1 || currentIdx >= steps.length - 1) return null;
+
+  const nextStep = steps[currentIdx + 1];
+  const nextStepName = nextStep.Name || nextStep.StepName || nextStep.ActivityName || nextStep.NodeName;
+  const nextStepId = nextStep.ActivityId || nextStep.StepId || nextStep.NodeId;
+
+  const outgoingEdges = workflow.edges.filter(e => e.from === nodeId);
+  for (const edge of outgoingEdges) {
+    const targetNode = workflow.nodes.find(n => n.id === edge.to);
+    if (!targetNode) continue;
+
+    const targetIdLower = targetNode.id.toLowerCase().trim();
+    const targetCallLower = targetNode.callName ? targetNode.callName.toLowerCase().trim() : "";
+    const nextNameLower = nextStepName ? nextStepName.toLowerCase().trim() : "";
+    const nextIdLower = nextStepId ? nextStepId.toLowerCase().trim() : "";
+
+    if (
+      targetIdLower === nextIdLower ||
+      targetIdLower === nextNameLower ||
+      (targetCallLower && targetCallLower === nextIdLower) ||
+      (targetCallLower && targetCallLower === nextNameLower)
+    ) {
+      return {
+        label: edge.label || (edge.condition ? "If" : "Else"),
+        target: targetNode.id
+      };
+    }
+  }
+  return null;
+}
+
+function findKeyValueRecursive(obj, searchKey) {
+  if (obj === null || obj === undefined) return undefined;
+  if (typeof obj !== 'object') return undefined;
+
+  const keyLower = searchKey.toLowerCase();
+  for (const k of Object.keys(obj)) {
+    if (k.toLowerCase() === keyLower) {
+      return obj[k];
+    }
+  }
+
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      const res = findKeyValueRecursive(item, searchKey);
+      if (res !== undefined) return res;
+    }
+  } else {
+    for (const v of Object.values(obj)) {
+      const res = findKeyValueRecursive(v, searchKey);
+      if (res !== undefined) return res;
+    }
+  }
+  return undefined;
+}
+
+function extractAndEvaluateVariables(script, stepInput, stepOutput, processContext) {
+  if (!script) return null;
+
+  const matches = script.match(/\b(input|globalVariables|global|variables|context|data)\.[a-zA-Z0-9_$]+(\.[a-zA-Z0-9_$]+)*/gi) || [];
+  const results = {};
+  const searchPayloads = [
+    stepInput,
+    stepOutput,
+    processContext?.globalVariables,
+    processContext?.workflowInput
+  ].filter(p => p !== null && p !== undefined);
+
+  const lookupValue = (path) => {
+    const parts = path.split('.');
+    const prefixes = ["input", "globalvariables", "global", "variables", "context", "data"];
+    
+    let keyPath = parts;
+    if (parts.length > 1 && prefixes.includes(parts[0].toLowerCase())) {
+      keyPath = parts.slice(1);
+    }
+    
+    for (const payload of searchPayloads) {
+      let current = payload;
+      let found = true;
+      for (const part of keyPath) {
+        if (current && typeof current === 'object' && part in current) {
+          current = current[part];
+        } else {
+          found = false;
+          break;
+        }
+      }
+      if (found) return current;
+    }
+    
+    const searchKey = keyPath[keyPath.length - 1];
+    for (const payload of searchPayloads) {
+      const foundVal = findKeyValueRecursive(payload, searchKey);
+      if (foundVal !== undefined) return foundVal;
+    }
+    
+    return undefined;
+  };
+
+  const uniquePaths = [...new Set(matches)];
+  uniquePaths.forEach(path => {
+    const val = lookupValue(path);
+    if (val !== undefined) {
+      results[path] = val;
+    }
+  });
+
+  const jsKeywords = new Set([
+    "true", "false", "null", "undefined", "if", "else", "return", "var", "let", "const", 
+    "function", "typeof", "instanceof", "new", "this", "class", "import", "export"
+  ]);
+  const words = script.match(/\b[a-zA-Z_$][a-zA-Z0-9_$]*\b/g) || [];
+  const uniqueWords = [...new Set(words)];
+
+  uniqueWords.forEach(word => {
+    if (jsKeywords.has(word) || word.length < 2) return;
+    if (uniquePaths.some(p => p.toLowerCase().split('.').includes(word.toLowerCase()))) return;
+    
+    const val = lookupValue(word);
+    if (val !== undefined && typeof val !== 'function') {
+      results[word] = val;
+    }
+  });
+
+  return Object.keys(results).length > 0 ? results : null;
+}
+
 function renderLiveExecDetail(workflow) {
   if (state.liveHighlightedWorkflow !== workflow.name) {
     return `
@@ -5285,6 +5419,74 @@ function renderLiveExecDetail(workflow) {
       `;
     }
 
+    let conditionBlockHtml = "";
+    if (node && node.type === "condition" && node.conditionScript) {
+      const executedBranch = findExecutedBranch(node.id, step, workflow, steps);
+      let branchTextHtml = "";
+      if (executedBranch) {
+        const badgeStyle = executedBranch.label.toLowerCase() === "else"
+          ? "background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3);"
+          : "background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);";
+        branchTextHtml = `<span style="padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 11px; ${badgeStyle}">${escapeHtml(executedBranch.label)} &rarr; ${escapeHtml(executedBranch.target)}</span>`;
+      } else {
+        branchTextHtml = `<span class="dim" style="font-size: 11px;">(Unknown / End of flow)</span>`;
+      }
+
+      const logicHtml = `<pre style="margin: 0; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid var(--line); border-radius: 4px; font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; color: var(--text);">${escapeHtml(node.conditionScript)}</pre>`;
+
+      const evaluatedVars = extractAndEvaluateVariables(node.conditionScript, inputJson, outputJson, processContext);
+      let varsHtml = "";
+      if (evaluatedVars) {
+        let rows = "";
+        for (const [key, val] of Object.entries(evaluatedVars)) {
+          let valText = "";
+          if (typeof val === "object" && val !== null) {
+            const str = JSON.stringify(val);
+            valText = str.length > 60 ? (Array.isArray(val) ? `[... ${val.length} items]` : `{... ${Object.keys(val).length} keys}`) : str;
+          } else {
+            valText = String(val);
+          }
+          rows += `
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed var(--line); padding: 3px 0;">
+              <span style="font-family: monospace; color: var(--text-muted, #7e8aa3);">${escapeHtml(key)}</span>
+              <strong style="font-family: monospace; color: var(--accent);">${escapeHtml(valText)}</strong>
+            </div>
+          `;
+        }
+        varsHtml = `
+          <div style="margin-top: 10px;">
+            <strong style="font-size: 11px; display: block; margin-bottom: 4px; color: var(--text-muted);">Variable Values:</strong>
+            <div style="background: rgba(255,255,255,0.01); border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px;">
+              ${rows}
+            </div>
+          </div>
+        `;
+      } else {
+        varsHtml = `
+          <div style="margin-top: 10px; font-size: 11px;" class="dim">
+            (No variables could be extracted/evaluated from current payloads)
+          </div>
+        `;
+      }
+
+      conditionBlockHtml = `
+        <div style="margin-top: 12px; padding: 12px; background: rgba(59, 130, 246, 0.05); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 6px; margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+            <strong style="font-size: 12px; color: var(--accent);">Condition Evaluation Details</strong>
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <span style="font-size: 11px; color: var(--text-muted);">Branch Taken:</span>
+              ${branchTextHtml}
+            </div>
+          </div>
+          <div style="margin-bottom: 8px;">
+            <strong style="font-size: 11px; display: block; margin-bottom: 4px; color: var(--text-muted);">Expression / Logic:</strong>
+            ${logicHtml}
+          </div>
+          ${varsHtml}
+        </div>
+      `;
+    }
+
     html += `
       <div style="border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 16px; background: var(--bg-card, rgba(255,255,255,0.02));">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
@@ -5302,6 +5504,8 @@ function renderLiveExecDetail(workflow) {
         </div>
 
         ${diagnosticsHtml}
+
+        ${conditionBlockHtml}
 
         <div style="margin-top: 12px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px; border-bottom: 1px solid var(--line); padding-bottom: 4px;">
