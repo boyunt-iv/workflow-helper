@@ -3314,8 +3314,12 @@ function buildRoutedEdges(workflow, nodeById) {
 
 function matchNodeWithStep(nodeId, step, workflow) {
   if (!nodeId || !step) return false;
-  const nodeIdLower = nodeId.toLowerCase().trim();
   const node = workflow?.nodes.find(n => n.id === nodeId);
+  if (typeof window.LivePresentation?.matchesWorkflowNodeStep === "function") {
+    return window.LivePresentation.matchesWorkflowNodeStep(node, step);
+  }
+
+  const nodeIdLower = nodeId.toLowerCase().trim();
   const nodeCallNameLower = node && node.callName ? node.callName.toLowerCase().trim() : null;
 
   const stepName = step.Name || step.StepName || step.ActivityName || step.NodeName;
@@ -3331,39 +3335,39 @@ function matchNodeWithStep(nodeId, step, workflow) {
   );
 }
 
-function getNodeLiveStatus(nodeId, workflow) {
+function isNodeMarkedExecuted(nodeId, workflow) {
+  const nodeIdLower = nodeId.toLowerCase().trim();
+  const node = workflow.nodes.find(n => n.id === nodeId);
+  const nodeCallNameLower = node && node.callName ? node.callName.toLowerCase().trim() : null;
+  return state.liveExecutedNodes.has(nodeId) ||
+    state.liveExecutedNodes.has(nodeIdLower) ||
+    (node && node.callName && state.liveExecutedNodes.has(node.callName)) ||
+    (node && node.callName && state.liveExecutedNodes.has(nodeCallNameLower));
+}
+
+function getNodeLiveInfo(nodeId, workflow) {
   if (!state.liveHighlightedWorkflow || !state.liveExecutedNodes) return null;
   if (!workflow) return null;
-  
+
   const steps = typeof window.WorkflowLive?.getSelectedProcessSteps === "function"
     ? window.WorkflowLive.getSelectedProcessSteps()
     : [];
   if (steps.length === 0) {
-    const nodeIdLower = nodeId.toLowerCase().trim();
-    const node = workflow.nodes.find(n => n.id === nodeId);
-    const nodeCallNameLower = node && node.callName ? node.callName.toLowerCase().trim() : null;
-    const isHighlighted = state.liveExecutedNodes.has(nodeId) ||
-                          state.liveExecutedNodes.has(nodeIdLower) ||
-                          (node && node.callName && state.liveExecutedNodes.has(node.callName)) ||
-                          (node && node.callName && state.liveExecutedNodes.has(nodeCallNameLower));
-    return isHighlighted ? "completed" : null;
+    return isNodeMarkedExecuted(nodeId, workflow)
+      ? { status: "completed", executionCount: 1 }
+      : null;
   }
 
   const matchedSteps = steps.filter(step => matchNodeWithStep(nodeId, step, workflow));
 
   if (matchedSteps.length === 0) {
-    const nodeIdLower = nodeId.toLowerCase().trim();
-    const node = workflow.nodes.find(n => n.id === nodeId);
-    const nodeCallNameLower = node && node.callName ? node.callName.toLowerCase().trim() : null;
-    const isHighlighted = state.liveExecutedNodes.has(nodeId) ||
-                          state.liveExecutedNodes.has(nodeIdLower) ||
-                          (node && node.callName && state.liveExecutedNodes.has(node.callName)) ||
-                          (node && node.callName && state.liveExecutedNodes.has(nodeCallNameLower));
-    return isHighlighted ? "completed" : null;
+    return isNodeMarkedExecuted(nodeId, workflow)
+      ? { status: "completed", executionCount: 1 }
+      : null;
   }
 
   const hasFailed = matchedSteps.some(s => s.IsFailed || s.ErrorDescription || s.ErrorCode);
-  if (hasFailed) return "failed";
+  if (hasFailed) return { status: "failed", executionCount: matchedSteps.length };
 
   // "alert": the step completed, but its output payload carries a failing
   // status/severity field (business-rule failure). Mirrors the dark-pink JSON
@@ -3371,7 +3375,14 @@ function getNodeLiveStatus(nodeId, workflow) {
   const hasOutputAlert = matchedSteps.some(s =>
     payloadHasFailFlag(s.OutputJson || s.Output || s.Result || s.WorkflowOutputJson || s.workflowOutputJson, 0)
   );
-  return hasOutputAlert ? "alert" : "completed";
+  return {
+    status: hasOutputAlert ? "alert" : "completed",
+    executionCount: matchedSteps.length,
+  };
+}
+
+function getNodeLiveStatus(nodeId, workflow) {
+  return getNodeLiveInfo(nodeId, workflow)?.status || null;
 }
 
 // Deep-scan a payload for a `status`/`severity` field (any nesting level, incl.
@@ -3973,10 +3984,16 @@ function renderNode(node, offsetX, offsetY, isActive, dbOps = []) {
     ? `<text class="node-async-tag" x="${center.x}" y="${center.y - 24}" text-anchor="middle">async</text>`
     : "";
 
-  const nodeStatus = getNodeLiveStatus(node.id, state.selectedWorkflow);
+  const nodeLiveInfo = getNodeLiveInfo(node.id, state.selectedWorkflow);
+  const nodeStatus = nodeLiveInfo?.status || null;
   const liveHighlightClass = nodeStatus
     ? `step-highlight-node ${nodeStatus === "failed" ? "danger" : nodeStatus === "alert" ? "alert" : "success"}`
     : "";
+  const repeatBadge = renderNodeRepeatBadge(
+    center,
+    node,
+    nodeLiveInfo?.executionCount || 0,
+  );
 
   const tooltip = zoralNodeTooltip(node);
 
@@ -4013,6 +4030,7 @@ function renderNode(node, offsetX, offsetY, isActive, dbOps = []) {
         ${renderNodeText(center, labelLines, callName)}
         ${asyncTag}
         ${renderDbBadge(center, node, dbOps)}
+        ${repeatBadge}
       </g>
     `;
   }
@@ -4033,6 +4051,7 @@ function renderNode(node, offsetX, offsetY, isActive, dbOps = []) {
         <text class="node-label node-event-caption" x="${center.x}" y="${center.y + 39}" text-anchor="middle">${escapeHtml(labelLines[0] || "")}</text>
         ${asyncTag}
         ${renderDbBadge(center, node, dbOps)}
+        ${repeatBadge}
       </g>
     `;
   }
@@ -4050,6 +4069,7 @@ function renderNode(node, offsetX, offsetY, isActive, dbOps = []) {
         <text class="node-label node-event-caption" x="${center.x}" y="${center.y + 39}" text-anchor="middle">${escapeHtml(labelLines[0] || "")}</text>
         ${asyncTag}
         ${renderDbBadge(center, node, dbOps)}
+        ${repeatBadge}
       </g>
     `;
   }
@@ -4062,6 +4082,39 @@ function renderNode(node, offsetX, offsetY, isActive, dbOps = []) {
       ${renderNodeText(center, labelLines, callName)}
       ${asyncTag}
       ${renderDbBadge(center, node, dbOps)}
+      ${repeatBadge}
+    </g>
+  `;
+}
+
+function renderNodeRepeatBadge(center, node, executionCount) {
+  if (!Number.isFinite(executionCount) || executionCount < 2) return "";
+  const countText = String(Math.floor(executionCount));
+  const label = `x${countText}`;
+  const height = 24;
+  const radius = height / 2;
+  const width = Math.max(38, 26 + countText.length * 8);
+  const size = nodeSize(node);
+  const x = center.x - size.width / 2 - 8;
+  const y = center.y - size.height / 2 - 12;
+  const path = [
+    `M ${x + radius} ${y}`,
+    `H ${x + width - radius}`,
+    `A ${radius} ${radius} 0 0 1 ${x + width} ${y + radius}`,
+    `V ${y + height - radius}`,
+    `A ${radius} ${radius} 0 0 1 ${x + width - radius} ${y + height}`,
+    `H ${x + radius}`,
+    `A ${radius} ${radius} 0 0 1 ${x} ${y + height - radius}`,
+    `V ${y + radius}`,
+    `A ${radius} ${radius} 0 0 1 ${x + radius} ${y}`,
+    "Z",
+  ].join(" ");
+
+  return `
+    <g class="node-repeat-badge" aria-label="Executed ${countText} times">
+      <title>Executed ${countText} times</title>
+      <path class="node-repeat-badge-shape" d="${path}"></path>
+      <text class="node-repeat-badge-text" x="${x + width / 2}" y="${y + 16}" text-anchor="middle">${label}</text>
     </g>
   `;
 }
