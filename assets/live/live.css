@@ -788,8 +788,57 @@ body.live-active .live-warning-banner {
 
 .json-block-toolbar {
   display: flex;
-  justify-content: flex-end;
-  margin: 4px 0 -2px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 4px 0 2px;
+}
+
+.json-search-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.json-search-input {
+  width: clamp(120px, 18vw, 240px);
+  min-width: 0;
+  height: 26px;
+  border: 1px solid var(--line-strong, #b5c1cc);
+  border-radius: 5px;
+  background: var(--surface, #fff);
+  color: var(--text, #17202a);
+  padding: 3px 7px;
+  font-family: inherit;
+  font-size: 10px;
+}
+
+.json-search-nav {
+  height: 24px;
+  border: 1px solid var(--line-strong, #b5c1cc);
+  border-radius: 4px;
+  background: var(--surface, #fff);
+  color: #2563eb;
+  padding: 0 5px;
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.json-search-nav:disabled {
+  cursor: default;
+  color: var(--muted, #94a3b8);
+  opacity: .6;
+}
+
+.json-search-count {
+  min-width: 66px;
+  color: var(--muted, #64748b);
+  font-size: 9px;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .json-copy-btn {
@@ -1176,6 +1225,13 @@ body.live-active .live-warning-banner {
   border: 1px solid rgba(234, 88, 12, 0.4);
   border-radius: 3px;
   padding: 1px 3px;
+}
+
+.json-tree-highlight.is-current {
+  background-color: #f97316;
+  color: #fff;
+  outline: 2px solid rgba(249, 115, 22, .35);
+  outline-offset: 1px;
 }
 
 /* Faded node for search mismatch */

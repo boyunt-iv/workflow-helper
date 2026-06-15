@@ -1,6 +1,7 @@
 (function (root) {
   "use strict";
   const L = () => root.WorkflowLive;
+  const P = () => root.LivePresentation;
   const st = { ctx: null, graph: null, view: "gantt", selected: null, env: null, token: null, bridgeWin: null, importedFileName: null, lastAppId: null, showDbInterventions: true, stopRequested: false, loadAllMode: false, autoFetchRelationships: false, allDirectItems: [], directTotal: null, nextDirectPage: 1, effPageSize: 0, lastDirectPageCount: 0, hasMorePages: false, incrementalLoad: false, scrollBottomGap: null, progress: { segments: [], skipped: 0 } };
 
   // --- Loading progress tracking (per round / per page) ---
@@ -28,6 +29,7 @@
   let activeAutoFetches = 0;
   let loadingActive = false;
   const jsonPayloads = new Map();
+  const jsonSearchStates = new Map();
   // Requested direct-list page size. The *effective* size (st.effPageSize) is
   // captured from page 1 in case the server caps it below this value.
   const DIRECT_PAGE_SIZE = 25;
@@ -1171,18 +1173,12 @@
       return `<span class="dim" style="font-size:11px;">(Empty payload)</span>`;
     }
 
-    let copyValue = payload;
-    if (typeof payload === "string") {
-      try {
-        copyValue = JSON.parse(payload);
-      } catch (_) {
-        copyValue = payload;
-      }
-    }
+    const copyValue = P()?.parseMaybeJson(payload) ?? payload;
     const copyText = typeof copyValue === "string"
       ? copyValue
       : JSON.stringify(copyValue, null, 2);
     jsonPayloads.set(containerId, copyText);
+    jsonSearchStates.delete(containerId);
 
     const copyButton = `
       <button type="button" class="json-copy-btn"
@@ -1190,24 +1186,155 @@
         aria-label="Copy JSON to clipboard" title="Copy JSON to clipboard">COPY</button>
     `;
 
-    if (typeof payload !== "object" || payload === null) {
-      return `
-        <div class="json-block">
-          <div class="json-block-toolbar">${copyButton}</div>
-          <pre id="${containerId}" class="json-code">${escapeHtml(String(payload))}</pre>
-        </div>
-      `;
-    }
+    const searchControls = `
+      <div class="json-search-controls">
+        <input type="search" class="json-search-input" placeholder="Filter JSON..."
+          aria-label="Filter JSON"
+          oninput="window.searchJsonPayload('${escapeHtml(containerId)}', this.value)"
+          onkeydown="window.handleJsonSearchKeydown(event, '${escapeHtml(containerId)}')" />
+        <button type="button" class="json-search-nav" data-json-search-nav="prev"
+          onclick="window.navigateJsonMatch('${escapeHtml(containerId)}', -1)"
+          aria-label="Previous JSON match" title="Previous match" disabled>PREV</button>
+        <span class="json-search-count" data-json-search-count>0 found</span>
+        <button type="button" class="json-search-nav" data-json-search-nav="next"
+          onclick="window.navigateJsonMatch('${escapeHtml(containerId)}', 1)"
+          aria-label="Next JSON match" title="Next match" disabled>NEXT</button>
+      </div>
+    `;
+
+    const contentHtml = typeof copyValue === "object" && copyValue !== null
+      ? `<div id="${containerId}" class="json-tree-container">${renderJsonTree(copyValue)}</div>`
+      : `<pre id="${containerId}" class="json-code">${escapeHtml(String(copyValue))}</pre>`;
 
     return `
-      <div class="json-block">
-        <div class="json-block-toolbar">${copyButton}</div>
-        <div id="${containerId}" class="json-tree-container">
-          ${renderJsonTree(payload)}
-        </div>
+      <div class="json-block" data-json-block="${containerId}">
+        <div class="json-block-toolbar">${searchControls}${copyButton}</div>
+        ${contentHtml}
       </div>
     `;
   }
+
+  function jsonSearchTargets(container) {
+    const targets = [...container.querySelectorAll(".json-tree-key, .json-tree-value, .json-code")];
+    if (container.matches(".json-code")) targets.unshift(container);
+    return targets;
+  }
+
+  function restoreJsonSearchTargets(container) {
+    jsonSearchTargets(container).forEach((target) => {
+      const originalText = target.dataset.jsonSearchText;
+      if (originalText !== undefined) target.textContent = originalText;
+    });
+    container.querySelectorAll(".json-tree-node").forEach((node) => {
+      node.classList.remove("search-dimmed");
+    });
+  }
+
+  function expandJsonMatchParents(match) {
+    let branch = match.closest(".json-tree-branch");
+    while (branch) {
+      branch.classList.remove("collapsed");
+      const toggle = branch.querySelector(":scope > .json-tree-branch-header > .json-tree-toggle");
+      if (toggle) toggle.textContent = "โ–ผ";
+      branch = branch.parentElement.closest(".json-tree-branch");
+    }
+  }
+
+  function updateJsonSearchUi(containerId) {
+    const state = jsonSearchStates.get(containerId) || { matches: [], current: -1 };
+    const container = document.getElementById(containerId);
+    const block = container?.closest(".json-block");
+    if (!block) return;
+
+    const total = state.matches.length;
+    const count = block.querySelector("[data-json-search-count]");
+    if (count) {
+      count.textContent = total > 0 ? `${state.current + 1} / ${total} found` : "0 found";
+    }
+    block.querySelectorAll("[data-json-search-nav]").forEach((button) => {
+      button.disabled = total === 0;
+    });
+  }
+
+  function focusJsonMatch(containerId, index) {
+    const state = jsonSearchStates.get(containerId);
+    if (!state || state.matches.length === 0) {
+      updateJsonSearchUi(containerId);
+      return;
+    }
+
+    state.matches.forEach((match) => match.classList.remove("is-current"));
+    state.current = (index + state.matches.length) % state.matches.length;
+    const current = state.matches[state.current];
+    current.classList.add("is-current");
+    expandJsonMatchParents(current);
+    current.scrollIntoView({ block: "center", inline: "nearest" });
+    updateJsonSearchUi(containerId);
+  }
+
+  window.searchJsonPayload = function (containerId, query) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    restoreJsonSearchTargets(container);
+
+    const normalizedQuery = String(query || "").trim().toLowerCase();
+    const matches = [];
+    if (normalizedQuery) {
+      jsonSearchTargets(container).forEach((target) => {
+        const text = target.textContent;
+        target.dataset.jsonSearchText = text;
+        const lowerText = text.toLowerCase();
+        let cursor = 0;
+        let matchIndex = lowerText.indexOf(normalizedQuery, cursor);
+        if (matchIndex === -1) return;
+
+        const fragment = document.createDocumentFragment();
+        while (matchIndex !== -1) {
+          fragment.append(document.createTextNode(text.slice(cursor, matchIndex)));
+          const highlight = document.createElement("span");
+          highlight.className = "json-tree-highlight";
+          highlight.textContent = text.slice(matchIndex, matchIndex + normalizedQuery.length);
+          fragment.append(highlight);
+          matches.push(highlight);
+          cursor = matchIndex + normalizedQuery.length;
+          matchIndex = lowerText.indexOf(normalizedQuery, cursor);
+        }
+        fragment.append(document.createTextNode(text.slice(cursor)));
+        target.replaceChildren(fragment);
+      });
+    }
+
+    if (matches.length > 0) {
+      container.querySelectorAll(".json-tree-node").forEach((node) => {
+        if (!node.querySelector(".json-tree-highlight")) {
+          node.classList.add("search-dimmed");
+        }
+      });
+    }
+
+    jsonSearchStates.set(containerId, {
+      current: matches.length > 0 ? 0 : -1,
+      matches,
+      query: normalizedQuery,
+    });
+    if (matches.length > 0) {
+      focusJsonMatch(containerId, 0);
+    } else {
+      updateJsonSearchUi(containerId);
+    }
+  };
+
+  window.navigateJsonMatch = function (containerId, delta) {
+    const state = jsonSearchStates.get(containerId);
+    if (!state || state.matches.length === 0) return;
+    focusJsonMatch(containerId, state.current + delta);
+  };
+
+  window.handleJsonSearchKeydown = function (event, containerId) {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    window.navigateJsonMatch(containerId, event.shiftKey ? -1 : 1);
+  };
 
   async function writeClipboardText(text) {
     if (navigator.clipboard && window.isSecureContext) {
@@ -1289,6 +1416,10 @@
       // Parse tags dynamically
       let tagsHtml = "";
       const rawObj = n.raw || {};
+      const processContext = P()?.getProcessContext(n) || {
+        globalVariables: null,
+        workflowInput: null,
+      };
       let tags = {};
       const rawTags = rawObj.ProcessTags || rawObj.Tags || (rawObj.Request && (rawObj.Request.ProcessTags || rawObj.Request.Tags));
       if (Array.isArray(rawTags)) {
@@ -1335,26 +1466,6 @@
       const isLoading = st.loadingDetailId === n.requestId;
 
       if (activeTab === "overview") {
-        // Global Variables (GlobalVariablesJson arrives as a JSON string and must be parsed)
-        let globalVars = rawObj.GlobalVariablesJson || (rawObj.Request && rawObj.Request.GlobalVariablesJson) || null;
-        if (typeof globalVars === "string") {
-          try { globalVars = JSON.parse(globalVars); } catch (e) { globalVars = null; }
-        }
-        let globalVarsHtml = "";
-        if (globalVars && typeof globalVars === "object" && Object.keys(globalVars).length > 0) {
-          globalVarsHtml = `
-            <div style="margin-top:12px; border-top:1px solid rgba(255,255,255,0.07); padding-top:10px;">
-              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
-                <div style="font-size:10px; font-weight:700; color:#64748b; letter-spacing:.06em; text-transform:uppercase;">Global Variables</div>
-                <div style="display:flex; gap:4px;">
-                  <button onclick="window.expandAllJson('globalVarsTree')" class="live-run" style="padding:2px 6px; font-size:9px; background:#475569; border:0; border-radius:3px; color:#fff; cursor:pointer; line-height:1.4;">Expand</button>
-                  <button onclick="window.collapseAllJson('globalVarsTree')" class="live-run" style="padding:2px 6px; font-size:9px; background:#475569; border:0; border-radius:3px; color:#fff; cursor:pointer; line-height:1.4;">Collapse</button>
-                </div>
-              </div>
-              ${renderPayloadTable(globalVars, "globalVarsTree")}
-            </div>`;
-        }
-
         // All Process Tags
         const allTagEntries = Object.entries(tags);
         let allTagsHtml = "";
@@ -1380,7 +1491,6 @@
             <div class="kv"><span>Children</span><span>${n.children.length}</span></div>
           </div>
           ${allTagsHtml}
-          ${globalVarsHtml}
           <div style="margin-top:16px; display:flex; gap:8px; flex-wrap:wrap; margin-bottom: 16px;">
             <a href="${portal}" target="_blank" rel="noopener" class="live-run" style="padding:6px 12px; font-size:11px; text-decoration:none; display:inline-block; line-height:1.2;">Open in portal ↗</a>
             <button id="copyJiraBtn" onclick="window.copyJiraReport()" class="live-run" style="padding:6px 12px; font-size:11px; background:#10b981; border:0; border-radius:4px; color:#fff; cursor:pointer; line-height:1.2;">Copy Jira Report 📋</button>
@@ -1417,10 +1527,20 @@
 
         const liveInput = extractPayload(rawObj, ["Input", "Variables", "WorkflowInputJson", "workflowInputJson"]);
         const liveOutput = extractPayload(rawObj, ["Output", "Result", "WorkflowOutputJson", "workflowOutputJson"]);
+        const globalVariables = processContext.globalVariables;
 
-        if (liveInput === null && liveOutput === null && (!staticWf || !staticWf.dataContext || !staticWf.dataContext.inputFields || staticWf.dataContext.inputFields.length === 0)) {
+        if (globalVariables === null && liveInput === null && liveOutput === null && (!staticWf || !staticWf.dataContext || !staticWf.dataContext.inputFields || staticWf.dataContext.inputFields.length === 0)) {
           tabContentHtml = '<div class="empty-state" style="padding:40px 20px; text-align:center;">ไม่มีข้อมูล</div>';
         } else {
+          let globalVariablesHtml = "";
+          if (globalVariables !== null) {
+            globalVariablesHtml = `
+              <div style="margin-bottom:16px;">
+                <div style="font-weight:600; font-size:11px; color:var(--text-muted, #64748b); margin-bottom:8px;">Global Variables:</div>
+                ${renderPayloadTable(globalVariables, "globalVarsTree")}
+              </div>`;
+          }
+
           let liveInputHtml = `<span class="dim" style="font-size:11px;">(No live input data available)</span>`;
           if (liveInput !== null) {
             liveInputHtml = renderPayloadTable(liveInput, "liveInputTree");
@@ -1433,6 +1553,7 @@
 
           tabContentHtml = `
             <section class="detail-section" style="margin-bottom:16px;">
+              ${globalVariablesHtml}
               <div style="margin-bottom:16px;">
                 <div style="font-weight:600; font-size:11px; color:var(--text-muted, #64748b); margin-bottom:4px;">Expected Static Inputs:</div>
                 ${staticInputHtml}
@@ -2044,6 +2165,16 @@
       return;
     }
 
+    const entryNode = P()?.findWorkflowEntryNode(targetWf);
+    if (entryNode) {
+      executedNames.add(entryNode.id);
+      executedNames.add(String(entryNode.id).toLowerCase().trim());
+      if (entryNode.callName) {
+        executedNames.add(entryNode.callName);
+        executedNames.add(String(entryNode.callName).toLowerCase().trim());
+      }
+    }
+
     const canonicalName = targetWf.name;
 
     if (st.ctx && st.ctx.state && typeof window.setMode === "function" && typeof window.selectWorkflow === "function") {
@@ -2250,13 +2381,12 @@
     `;
 
     // Render tree view or empty
-    const renderPayloadView = (payload, title, searchId, treeId) => {
+    const renderPayloadView = (payload, title, treeId) => {
       const payloadHtml = renderPayloadTable(payload, treeId);
       return `
         <div class="live-modal-payload-header">
           <strong>${escapeHtml(title)}</strong>
           <div style="display:flex; align-items:center; gap:12px;">
-            <input type="text" id="${searchId}" class="live-modal-payload-search" placeholder="Search keys or values..."/>
             <button class="live-modal-nav-btn" onclick="window.expandAllJson('${treeId}')">Expand All</button>
             <button class="live-modal-nav-btn" onclick="window.collapseAllJson('${treeId}')">Collapse All</button>
           </div>
@@ -2305,10 +2435,10 @@
           <div id="modalPayloadsContent" class="live-modal-tab-content active">
             <div class="live-modal-split-row">
               <div class="live-modal-split-col">
-                ${renderPayloadView(inputJson, "Input Payload Data", "modalInputSearch", "modalInputTree")}
+                ${renderPayloadView(inputJson, "Input Payload Data", "modalInputTree")}
               </div>
               <div class="live-modal-split-col">
-                ${renderPayloadView(outputJson, "Output Payload / Result", "modalOutputSearch", "modalOutputTree")}
+                ${renderPayloadView(outputJson, "Output Payload / Result", "modalOutputTree")}
               </div>
             </div>
           </div>
@@ -2362,73 +2492,7 @@
       });
     }
 
-    // JSON Searching
-    setupJsonSearch(modal.querySelector("#modalInputSearch"), "modalInputTree");
-    setupJsonSearch(modal.querySelector("#modalOutputSearch"), "modalOutputTree");
   };
-
-  function setupJsonSearch(inputEl, treeId) {
-    if (!inputEl) return;
-    inputEl.addEventListener("input", (e) => {
-      const q = e.target.value.trim().toLowerCase();
-      const tree = document.getElementById(treeId);
-      if (!tree) return;
-
-      // Clean highlights and dims first
-      tree.querySelectorAll(".json-tree-highlight").forEach(el => {
-        el.replaceWith(document.createTextNode(el.textContent));
-      });
-      tree.querySelectorAll(".json-tree-node").forEach(node => {
-        node.classList.remove("search-dimmed");
-      });
-
-      if (!q) return;
-
-      let matchCount = 0;
-
-      // Search all keys and value elements
-      const targets = tree.querySelectorAll(".json-tree-key, .json-tree-value");
-      targets.forEach(el => {
-        const text = el.textContent;
-        const index = text.toLowerCase().indexOf(q);
-        if (index !== -1) {
-          matchCount++;
-          // Highlight match
-          const highlighted = document.createElement("span");
-          highlighted.className = "json-tree-highlight";
-          highlighted.textContent = text.slice(index, index + q.length);
-
-          const before = document.createTextNode(text.slice(0, index));
-          const after = document.createTextNode(text.slice(index + q.length));
-
-          el.innerHTML = "";
-          el.appendChild(before);
-          el.appendChild(highlighted);
-          el.appendChild(after);
-
-          // Expand parent nodes so the match is visible
-          let parentNode = el.closest(".json-tree-branch");
-          while (parentNode) {
-            parentNode.classList.remove("collapsed");
-            const toggle = parentNode.querySelector(":scope > .json-tree-branch-header > .json-tree-toggle");
-            if (toggle) toggle.textContent = "▼";
-            parentNode = parentNode.parentElement.closest(".json-tree-branch");
-          }
-        }
-      });
-
-      // Dim all nodes that are not matching, nor are they parents/children of matching nodes
-      if (matchCount > 0) {
-        tree.querySelectorAll(".json-tree-node").forEach(node => {
-          const hasHighlight = node.querySelector(".json-tree-highlight");
-          const hasChildrenHighlight = node.querySelector(".json-tree-branch-children .json-tree-highlight");
-          if (!hasHighlight && !hasChildrenHighlight) {
-            node.classList.add("search-dimmed");
-          }
-        });
-      }
-    });
-  }
 
   function renderPayloadDiff(input, output) {
     if ((input === null || input === undefined) && (output === null || output === undefined)) {
