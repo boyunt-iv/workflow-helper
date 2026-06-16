@@ -12,7 +12,27 @@
   const VAULT_DB_NAME = "workflowHelperVault";
   const VAULT_STORE_NAME = "keys";
   const VAULT_KEY_ID = "passphraseWrapKey";
+  const VAULT_FILE_KEY = "cachedIndexFile";
+  const SESSION_STORE_KEY = "workflowHelper.indexPassphrase.session";
   const HANDOFF_TTL_MS = 30_000;
+  const syncChannel = root.BroadcastChannel ? new root.BroadcastChannel("workflowHelperPassphraseSync") : null;
+
+  if (syncChannel) {
+    syncChannel.onmessage = (event) => {
+      const msg = event.data;
+      if (!msg) return;
+      if (msg.type === "REQUEST_PASSPHRASE") {
+        const stored = root.sessionStorage.getItem(SESSION_STORE_KEY);
+        if (stored) syncChannel.postMessage({ type: "PROVIDE_PASSPHRASE", payload: stored });
+      } else if (msg.type === "PROVIDE_PASSPHRASE" && msg.payload) {
+        if (!root.sessionStorage.getItem(SESSION_STORE_KEY)) {
+          root.sessionStorage.setItem(SESSION_STORE_KEY, msg.payload);
+          tryAutoSessionUnlock();
+        }
+      }
+    };
+  }
+
   const gate = document.getElementById("indexGate");
   const gateForm = document.getElementById("indexGateForm");
   const fileInput = document.getElementById("indexFile");
@@ -154,10 +174,16 @@
       key,
       new TextEncoder().encode(passphrase),
     );
-    root.localStorage.setItem(
-      PASSPHRASE_STORE_KEY,
-      JSON.stringify({ iv: bytesToBase64(iv), ct: bytesToBase64(ciphertext) }),
-    );
+    const payloadStr = JSON.stringify({ iv: bytesToBase64(iv), ct: bytesToBase64(ciphertext) });
+    
+    root.sessionStorage.setItem(SESSION_STORE_KEY, payloadStr);
+    if (syncChannel) syncChannel.postMessage({ type: "PROVIDE_PASSPHRASE", payload: payloadStr });
+
+    if (rememberInput.checked) {
+      root.localStorage.setItem(PASSPHRASE_STORE_KEY, payloadStr);
+    } else {
+      clearStoredPassphrase();
+    }
   }
 
   function clearStoredPassphrase() {
@@ -168,8 +194,9 @@
     }
   }
 
-  async function loadStoredPassphrase() {
-    const raw = root.localStorage.getItem(PASSPHRASE_STORE_KEY);
+  async function loadStoredPassphrase(allowLocal = true) {
+    let raw = root.sessionStorage.getItem(SESSION_STORE_KEY);
+    if (!raw && allowLocal) raw = root.localStorage.getItem(PASSPHRASE_STORE_KEY);
     if (!raw) return "";
     const key = await getWrapKey(false);
     if (!key) return "";
@@ -177,6 +204,7 @@
     try {
       payload = JSON.parse(raw);
     } catch {
+      root.sessionStorage.removeItem(SESSION_STORE_KEY);
       clearStoredPassphrase();
       return "";
     }
@@ -210,11 +238,7 @@
 
   async function rememberPassphrase(passphrase) {
     try {
-      if (rememberInput.checked) {
-        await storePassphrase(passphrase);
-      } else {
-        clearStoredPassphrase();
-      }
+      await storePassphrase(passphrase);
     } catch {
       // Continue without persistence if the vault is unavailable.
     }
@@ -247,6 +271,18 @@
         },
       });
       root.ANALYZER_INDEX = result.index;
+      
+      if (file) {
+        try {
+          const db = await openVaultDb();
+          const buffer = await file.arrayBuffer();
+          await vaultRequest(db, "readwrite", store => store.put(buffer, VAULT_FILE_KEY));
+          db.close();
+        } catch (err) {
+          console.warn("Failed to cache index file:", err);
+        }
+      }
+      
       await rememberPassphrase(passphrase);
       passphraseInput.value = "";
       setStatus("Index unlocked. Starting analyzer...", "success");
@@ -324,6 +360,73 @@
     }
   }
 
+  async function tryAutoSessionUnlock() {
+    if (bootStarted) return false;
+    const sessionPass = await loadStoredPassphrase(false);
+    if (!sessionPass) return false;
+    
+    setStatus("Restoring session...", "working");
+    
+    const overlay = document.getElementById("loadingOverlay");
+    const loadingTitle = document.getElementById("loadingTitle");
+    const loadingMessage = document.getElementById("loadingMessage");
+    const loadingProgress = document.getElementById("loadingProgress");
+
+    if (overlay) {
+      if (loadingTitle) loadingTitle.textContent = "Restoring Session";
+      if (loadingMessage) loadingMessage.textContent = "Decrypting cached index. Please wait...";
+      if (loadingProgress) {
+        loadingProgress.hidden = false;
+        loadingProgress.textContent = "Loading cache...";
+      }
+      overlay.hidden = false;
+    }
+    
+    document.body.classList.remove("index-locked");
+    gate.hidden = true;
+    
+    let cachedBuffer;
+    try {
+      const db = await openVaultDb();
+      cachedBuffer = await vaultRequest(db, "readonly", store => store.get(VAULT_FILE_KEY));
+      db.close();
+    } catch {
+      // Ignore
+    }
+    
+    if (!cachedBuffer) {
+      setStatus("Cached index missing. Please select the file again.", "error");
+      document.body.classList.add("index-locked");
+      gate.hidden = false;
+      if (overlay) overlay.hidden = true;
+      return false;
+    }
+    
+    const cachedFile = new Blob([cachedBuffer], { type: "application/octet-stream" });
+    
+    try {
+      const result = await root.IndexCrypto.decryptIndexFile(cachedFile, sessionPass, {
+        onProgress(progress) {
+          if (loadingProgress) {
+            loadingProgress.textContent = `Decrypting chunk ${progress.completed} of ${progress.total}...`;
+          }
+          setStatus(`Restoring chunk ${progress.completed} of ${progress.total}...`, "working");
+        }
+      });
+      root.ANALYZER_INDEX = result.index;
+      setStatus("Session restored. Starting analyzer...", "success");
+      await bootApplication();
+      return true;
+    } catch (error) {
+      delete root.ANALYZER_INDEX;
+      document.body.classList.add("index-locked");
+      gate.hidden = false;
+      if (overlay) overlay.hidden = true;
+      setStatus("Session restoration failed. Please unlock manually.", "error");
+      return false;
+    }
+  }
+
   fileInput.addEventListener("change", () => {
     const file = fileInput.files?.[0];
     selectedFile.textContent = file
@@ -336,8 +439,28 @@
     unlock();
   });
 
+  const lockButton = document.getElementById("lockIndexButton");
+  if (lockButton) {
+    lockButton.addEventListener("click", async () => {
+      root.sessionStorage.removeItem(SESSION_STORE_KEY);
+      try {
+        const db = await openVaultDb();
+        await vaultRequest(db, "readwrite", store => store.delete(VAULT_FILE_KEY));
+        db.close();
+      } catch {}
+      root.location.reload();
+    });
+  }
+
   restoreOptionalPassphrase();
-  tryHttpsHandoffBoot().then((reused) => {
-    if (!reused) tryPlaintextDevelopmentBoot();
+  if (syncChannel && !root.sessionStorage.getItem(SESSION_STORE_KEY)) {
+    syncChannel.postMessage({ type: "REQUEST_PASSPHRASE" });
+  }
+
+  tryHttpsHandoffBoot().then(async (reused) => {
+    if (!reused) {
+      const autoUnlocked = await tryAutoSessionUnlock();
+      if (!autoUnlocked) tryPlaintextDevelopmentBoot();
+    }
   });
 })(window);
