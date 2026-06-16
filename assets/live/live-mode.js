@@ -142,7 +142,7 @@
     const exportBtn = document.getElementById("liveExport");
     if (runBtn) {
       runBtn.disabled = !enabled;
-      runBtn.textContent = enabled ? "Run (bridge)" : "Running... ⟳";
+      runBtn.textContent = enabled ? "Run (bridge)" : "Running... ⏳";
       runBtn.style.opacity = enabled ? "" : "0.7";
     }
     if (importBtn) {
@@ -730,8 +730,6 @@
         </div>
         <div class="live-toolbar-field live-status-field">
           <label>Status</label>
-        <div class="live-toolbar-field live-status-field">
-          <label>Status</label>
           <select id="liveStatus">
             <option value="">All</option>
             <option value="InProgress">InProgress</option>
@@ -802,7 +800,7 @@
     const workflowNameInput = bar.querySelector("#liveWorkflowName");
     workflowNameInput.addEventListener("input", scheduleWorkflowSuggestions);
     workflowNameInput.addEventListener("focus", scheduleWorkflowSuggestions);
-workflowNameInput.addEventListener("keydown", handleWorkflowSuggestionKeydown);
+    workflowNameInput.addEventListener("keydown", handleWorkflowSuggestionKeydown);
     workflowNameInput.addEventListener("blur", () => {
       setTimeout(hideWorkflowSuggestions, 120);
       updateWorkflowTagWarning();
@@ -831,11 +829,11 @@ workflowNameInput.addEventListener("keydown", handleWorkflowSuggestionKeydown);
         const modal = document.getElementById("installBridgeModal");
         if (!modal) return;
         modal.classList.add("active");
-        
+
         const srcEl = document.getElementById("bridgeBookmarkletSrc");
         if (srcEl && !srcEl.textContent) {
           const fallbackCode = "javascript:(function liveBridge(){function findToken(){try{for(const store of[localStorage,sessionStorage]){for(let i=0;i<store.length;i++){const v=store.getItem(store.key(i));if(!v||v.indexOf(\"access_token\")<0)continue;try{const o=JSON.parse(v);if(o&&o.access_token)return o.access_token;}catch(e){}}}}catch(e){}if(window.keycloak&&window.keycloak.token)return window.keycloak.token;try{for(const store of[localStorage,sessionStorage]){for(let i=0;i<store.length;i++){const m=(store.getItem(store.key(i))||\"\").match(/eyJ[\\w-]+\\.[\\w-]+\\.[\\w-]+/);if(m)return m[0];}}}catch(e){}return null;}const opener=window.opener;if(!opener){alert(\"Live Bridge: open the analyzer's console window FIRST, then click this.\");return;}let token=findToken();let allowedOrigins=[];const origFetch=window.fetch.bind(window);const send=(t)=>opener.postMessage({type:\"BRIDGE_TOKEN\",token:t,origin:location.origin},\"*\");if(token)send(token);window.fetch=function(input,init){try{const h=(init&&init.headers)||(input&&input.headers);let auth=h&&(h.get?h.get(\"authorization\"):(h.authorization||h.Authorization));if(auth&&/Bearer /.test(auth)){const t=auth.replace(\"Bearer \",\"\");if(t!==token){token=t;send(t);}}}catch(e){}return origFetch(input,init);};window.addEventListener(\"message\",async(ev)=>{if(ev.source!==opener)return;const m=ev.data;if(!m)return;if(m.type===\"BRIDGE_CONFIG\"){allowedOrigins=Array.isArray(m.allowedOrigins)?m.allowedOrigins.filter((origin)=>{try{const parsed=new URL(origin);return parsed.protocol===\"https:\"&&parsed.origin===origin;}catch(e){return false;}}):[];return;}if(m.type!==\"BRIDGE_FETCH\")return;let requestOrigin=\"\";try{requestOrigin=new URL(m.url).origin;}catch(e){}if(!allowedOrigins.includes(requestOrigin)){ev.source.postMessage({type:\"BRIDGE_RESULT\",reqId:m.reqId,ok:false,status:0,error:\"blocked host\"},\"*\");return;}try{const r=await origFetch(m.url,{headers:{authorization:\"Bearer \"+token,accept:\"application/json, text/plain, */*\",zworkspace:\"default\"}});const text=await r.text();let json=null;try{json=JSON.parse(text);}catch(e){}ev.source.postMessage({type:\"BRIDGE_RESULT\",reqId:m.reqId,ok:r.ok,status:r.status,json,raw:json?null:text},\"*\");}catch(err){ev.source.postMessage({type:\"BRIDGE_RESULT\",reqId:m.reqId,ok:false,status:0,error:String(err)},\"*\");}});alert(\"Live Bridge active\"+(token?\" (token captured)\":\" (no token yet — click anything in the portal)\"));})();void 0;";
-          
+
           fetch("bookmarklet/live-bridge.js")
             .then(r => r.ok ? r.text() : Promise.reject("Fetch failed"))
             .then(raw => {
@@ -1928,6 +1926,7 @@ workflowNameInput.addEventListener("keydown", handleWorkflowSuggestionKeydown);
     st.effPageSize = 0;
     st.lastDirectPageCount = 0;
     st.directPagesFetched = 0;
+    st.itemsInCurrentQuery = 0;
     st.hasMorePages = false;
     st.nextDirectPage = 1;
     resetProgress();
@@ -1985,6 +1984,9 @@ workflowNameInput.addEventListener("keydown", handleWorkflowSuggestionKeydown);
           if (Number.isFinite(response.pagination?.totalItems)) {
             st.directTotal = response.pagination.totalItems;
           }
+          if (st.itemsInCurrentQuery === undefined) st.itemsInCurrentQuery = 0;
+          st.itemsInCurrentQuery += newItems.length;
+
           // API metadata is authoritative when available. The item-count fallback
           // supports older responses, while the new-item guard prevents repeated
           // pages from making Load all loop forever.
@@ -1995,6 +1997,33 @@ workflowNameInput.addEventListener("keydown", handleWorkflowSuggestionKeydown);
             pagesFetched: st.directPagesFetched,
             maxPages: MAX_DIRECT_PAGES
           });
+
+          // Auto-continue by sliding the date window if we hit the limit but there are more items
+          // Zoral API often limits direct lists to 500 records.
+          const totalItems = response.pagination?.totalItems != null ? Number(response.pagination.totalItems) : 0;
+          if (!st.hasMorePages && st.loadAllMode && totalItems > st.itemsInCurrentQuery && st.allDirectItems.length > 0) {
+            const oldestItem = st.allDirectItems[st.allDirectItems.length - 1];
+            const oldestDateStr = oldestItem && (oldestItem.RequestDateTime || oldestItem.createdDate || oldestItem.Start);
+            if (oldestDateStr) {
+              try {
+                const d = new Date(oldestDateStr);
+                if (!isNaN(d.getTime())) {
+                  d.setMilliseconds(d.getMilliseconds() - 1);
+                  const newToDate = d.toISOString().replace(/\.\d+Z$/, ".000Z");
+                  lastQueryOpts.toDate = newToDate;
+
+                  st.nextDirectPage = 1;
+                  st.directPagesFetched = 0;
+                  st.effPageSize = 0;
+                  st.itemsInCurrentQuery = 0;
+                  st.hasMorePages = true;
+                  console.log("Zoral API limit reached. Auto-shifting date window to:", newToDate);
+                }
+              } catch (e) {
+                console.warn("Failed to auto-shift date window:", e);
+              }
+            }
+          }
 
           // Re-render the hierarchy. For an incremental "Load earlier" page,
           // older rows prepend at the top — keep the viewport anchored.

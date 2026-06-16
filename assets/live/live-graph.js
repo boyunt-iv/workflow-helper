@@ -3,7 +3,7 @@
 
   function buildProcessGraph(records, opts) {
     opts = opts || {};
-    const maxNodes = opts.maxNodes || 500;
+    const maxNodes = opts.maxNodes || 10000;
     const valid = (records || []).filter((r) => r && r.requestId);
     const byId = new Map();
     for (const rec of valid) {
