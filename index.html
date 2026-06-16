@@ -108,7 +108,7 @@
         <div id="indexStatus" class="index-status">Loading index...</div>
         <div class="app-version">
           <span>Web version</span>
-          <strong>v0.5.9</strong>
+          <strong>v0.5.10</strong>
         </div>
         <div style="display: flex; gap: 8px; margin-top: 8px; width: 100%;">
           <button id="lockIndexButton" class="rebuild-button" type="button" style="flex: 0 0 32px; width: 32px; padding: 0; display: flex; align-items: center; justify-content: center; background: rgba(239, 68, 68, 0.1); color: #ef4444; border-color: rgba(239, 68, 68, 0.3);" title="Lock Session">
@@ -307,6 +307,27 @@
       <div id="loadingProgress" class="loading-progress" hidden></div>
       <button id="stopFetchBtn" class="rebuild-button"
         style="margin-top: 16px; background: #ef4444; color: #fff; border: 0; display: none;">Stop Fetching ✕</button>
+    </div>
+  </div>
+
+  <!-- Install Bridge Modal -->
+  <div id="installBridgeModal" class="modal-overlay">
+    <div class="modal-dialog" style="max-width: 800px; width: 90vw;">
+      <div class="modal-header">
+        <h3 class="modal-title">Live Bridge</h3>
+        <button id="closeBridgeModalBtn" class="modal-close" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="settings-grid" style="padding-right: 4px; color: #17202a;">
+        <ol style="margin-top: 0; padding-left: 20px; line-height: 1.5;">
+          <li>Drag this to your bookmarks bar:<br><a id="bridgeBookmarkletLink" href="#" style="display:inline-block; margin:8px 0; background:#1e293b; color:#93c5fd; padding:10px 16px; border-radius:8px; text-decoration:none; font-weight:bold; border: 1px dashed #4b5b78;">Live Bridge</a></li>
+          <li>From the analyzer's Live API mode, click <b>Run (bridge)</b> — it opens the console window.</li>
+          <li>Log in there if needed, then click the <b>Live Bridge</b> bookmarklet in that window.</li>
+        </ol>
+        <details style="margin-top: 12px; color: #64748b; font-size: 12px;">
+          <summary style="cursor: pointer;">bookmarklet source</summary>
+          <pre id="bridgeBookmarkletSrc" style="background:#0b0f18; border:1px solid #222c40; border-radius:8px; padding:12px; white-space:pre-wrap; word-break:break-word; margin-top: 8px; color: #93c5fd;"></pre>
+        </details>
+      </div>
     </div>
   </div>
 
