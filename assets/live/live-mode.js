@@ -730,6 +730,8 @@
         </div>
         <div class="live-toolbar-field live-status-field">
           <label>Status</label>
+        <div class="live-toolbar-field live-status-field">
+          <label>Status</label>
           <select id="liveStatus">
             <option value="">All</option>
             <option value="InProgress">InProgress</option>
@@ -753,7 +755,7 @@
           <button class="live-run live-icon-button" id="liveExport" type="button"
             title="Export trace JSON" aria-label="Export trace JSON">${toolbarIcons.export}</button>
           <button class="live-run live-icon-button" id="liveView" type="button"></button>
-          <a href="bookmarklet/install.html" target="_blank" class="live-run live-bridge-link">Install Bridge</a>
+          <button type="button" id="btnInstallBridgeModal" class="live-run live-bridge-link">Install Bridge</button>
           <span id="liveBridge" class="live-bridge-status bad">bridge: off</span>
         </div>
       </div>`;
@@ -800,11 +802,12 @@
     const workflowNameInput = bar.querySelector("#liveWorkflowName");
     workflowNameInput.addEventListener("input", scheduleWorkflowSuggestions);
     workflowNameInput.addEventListener("focus", scheduleWorkflowSuggestions);
-    workflowNameInput.addEventListener("keydown", handleWorkflowSuggestionKeydown);
+workflowNameInput.addEventListener("keydown", handleWorkflowSuggestionKeydown);
     workflowNameInput.addEventListener("blur", () => {
       setTimeout(hideWorkflowSuggestions, 120);
       updateWorkflowTagWarning();
     });
+
     bar.querySelector("#liveRun").addEventListener("click", runBridge);
     bar.querySelector("#liveImport").addEventListener("click", importPrompt);
     bar.querySelector("#liveExport").addEventListener("click", () => {
@@ -821,6 +824,45 @@
         stopFetching();
       });
     }
+
+    const bridgeModalBtn = bar.querySelector("#btnInstallBridgeModal");
+    if (bridgeModalBtn) {
+      bridgeModalBtn.addEventListener("click", () => {
+        const modal = document.getElementById("installBridgeModal");
+        if (!modal) return;
+        modal.classList.add("active");
+        
+        const srcEl = document.getElementById("bridgeBookmarkletSrc");
+        if (srcEl && !srcEl.textContent) {
+          const fallbackCode = "javascript:(function liveBridge(){function findToken(){try{for(const store of[localStorage,sessionStorage]){for(let i=0;i<store.length;i++){const v=store.getItem(store.key(i));if(!v||v.indexOf(\"access_token\")<0)continue;try{const o=JSON.parse(v);if(o&&o.access_token)return o.access_token;}catch(e){}}}}catch(e){}if(window.keycloak&&window.keycloak.token)return window.keycloak.token;try{for(const store of[localStorage,sessionStorage]){for(let i=0;i<store.length;i++){const m=(store.getItem(store.key(i))||\"\").match(/eyJ[\\w-]+\\.[\\w-]+\\.[\\w-]+/);if(m)return m[0];}}}catch(e){}return null;}const opener=window.opener;if(!opener){alert(\"Live Bridge: open the analyzer's console window FIRST, then click this.\");return;}let token=findToken();let allowedOrigins=[];const origFetch=window.fetch.bind(window);const send=(t)=>opener.postMessage({type:\"BRIDGE_TOKEN\",token:t,origin:location.origin},\"*\");if(token)send(token);window.fetch=function(input,init){try{const h=(init&&init.headers)||(input&&input.headers);let auth=h&&(h.get?h.get(\"authorization\"):(h.authorization||h.Authorization));if(auth&&/Bearer /.test(auth)){const t=auth.replace(\"Bearer \",\"\");if(t!==token){token=t;send(t);}}}catch(e){}return origFetch(input,init);};window.addEventListener(\"message\",async(ev)=>{if(ev.source!==opener)return;const m=ev.data;if(!m)return;if(m.type===\"BRIDGE_CONFIG\"){allowedOrigins=Array.isArray(m.allowedOrigins)?m.allowedOrigins.filter((origin)=>{try{const parsed=new URL(origin);return parsed.protocol===\"https:\"&&parsed.origin===origin;}catch(e){return false;}}):[];return;}if(m.type!==\"BRIDGE_FETCH\")return;let requestOrigin=\"\";try{requestOrigin=new URL(m.url).origin;}catch(e){}if(!allowedOrigins.includes(requestOrigin)){ev.source.postMessage({type:\"BRIDGE_RESULT\",reqId:m.reqId,ok:false,status:0,error:\"blocked host\"},\"*\");return;}try{const r=await origFetch(m.url,{headers:{authorization:\"Bearer \"+token,accept:\"application/json, text/plain, */*\",zworkspace:\"default\"}});const text=await r.text();let json=null;try{json=JSON.parse(text);}catch(e){}ev.source.postMessage({type:\"BRIDGE_RESULT\",reqId:m.reqId,ok:r.ok,status:r.status,json,raw:json?null:text},\"*\");}catch(err){ev.source.postMessage({type:\"BRIDGE_RESULT\",reqId:m.reqId,ok:false,status:0,error:String(err)},\"*\");}});alert(\"Live Bridge active\"+(token?\" (token captured)\":\" (no token yet — click anything in the portal)\"));})();void 0;";
+          
+          fetch("bookmarklet/live-bridge.js")
+            .then(r => r.ok ? r.text() : Promise.reject("Fetch failed"))
+            .then(raw => {
+              const code = "javascript:(" + raw.replace(/^\s*\/\/.*$/gm, "").replace(/\n\s*/g, " ").replace(/\s{2,}/g, " ").trim() + ")();void 0;";
+              document.getElementById("bridgeBookmarkletLink").href = code;
+              srcEl.textContent = raw;
+            })
+            .catch(() => {
+              document.getElementById("bridgeBookmarkletLink").href = fallbackCode;
+              srcEl.textContent = fallbackCode;
+            });
+        }
+      });
+    }
+
+    const bridgeModal = document.getElementById("installBridgeModal");
+    if (bridgeModal && !bridgeModal.dataset.bound) {
+      bridgeModal.dataset.bound = "true";
+      bridgeModal.addEventListener("click", (e) => {
+        if (e.target === bridgeModal) bridgeModal.classList.remove("active");
+      });
+      const closeBtn = document.getElementById("closeBridgeModalBtn");
+      if (closeBtn) {
+        closeBtn.addEventListener("click", () => bridgeModal.classList.remove("active"));
+      }
+    }
+
     return bar;
   }
 

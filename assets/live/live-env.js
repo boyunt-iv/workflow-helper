@@ -8,7 +8,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : window, function (root) {
   "use strict";
 
-  const SESSION_KEY = "workflowHelper.liveEnvironment.v1";
+  const LOCAL_KEY = "workflowHelper.liveEnvironment.v2";
 
   function normalizeUrl(value, fieldName) {
     let url;
@@ -31,7 +31,7 @@
         tags: [{
           name: "ApplicationId",
           label: "ApplicationId",
-          placeholder: "e.g. 2025130250930024",
+          placeholder: "e.g. ABC130250930024",
         }],
       };
     }
@@ -104,9 +104,9 @@
     root.ANALYZER_ENV = normalized;
     if (options.persist !== false) {
       try {
-        sessionStorage.setItem(SESSION_KEY, JSON.stringify(normalized));
+        localStorage.setItem(LOCAL_KEY, JSON.stringify(normalized));
       } catch {
-        // Session persistence is optional.
+        // Local persistence is optional.
       }
     }
     if (typeof root.dispatchEvent === "function" && typeof CustomEvent !== "undefined") {
@@ -130,14 +130,23 @@
 
   function restore() {
     try {
-      const saved = sessionStorage.getItem(SESSION_KEY);
-      if (!saved) return null;
+      const saved = localStorage.getItem(LOCAL_KEY);
+      if (!saved) {
+        // Also try migrating from old sessionStorage if available
+        const legacySaved = sessionStorage.getItem("workflowHelper.liveEnvironment.v1");
+        if (legacySaved) {
+           sessionStorage.removeItem("workflowHelper.liveEnvironment.v1");
+           const parsed = JSON.parse(legacySaved);
+           return apply(parsed, { persist: true });
+        }
+        return null;
+      }
       return apply(JSON.parse(saved), { persist: false });
     } catch {
       try {
-        sessionStorage.removeItem(SESSION_KEY);
+        localStorage.removeItem(LOCAL_KEY);
       } catch {
-        // Ignore unavailable session storage.
+        // Ignore unavailable local storage.
       }
       return null;
     }
@@ -146,9 +155,9 @@
   function clear() {
     delete root.ANALYZER_ENV;
     try {
-      sessionStorage.removeItem(SESSION_KEY);
+      localStorage.removeItem(LOCAL_KEY);
     } catch {
-      // Ignore unavailable session storage.
+      // Ignore unavailable local storage.
     }
   }
 
