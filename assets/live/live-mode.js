@@ -974,6 +974,44 @@
     return d.toISOString().replace(/\.\d+Z$/, ".000Z");
   }
 
+  function getBridgeFallbackBookmarklet() {
+    return "javascript:(function liveBridge(){function findToken(){try{for(const store of[localStorage,sessionStorage]){for(let i=0;i<store.length;i++){const v=store.getItem(store.key(i));if(!v||v.indexOf(\"access_token\")<0)continue;try{const o=JSON.parse(v);if(o&&o.access_token)return o.access_token;}catch(e){}}}}catch(e){}if(window.keycloak&&window.keycloak.token)return window.keycloak.token;try{for(const store of[localStorage,sessionStorage]){for(let i=0;i<store.length;i++){const m=(store.getItem(store.key(i))||\"\").match(/eyJ[\\w-]+\\.[\\w-]+\\.[\\w-]+/);if(m)return m[0];}}}catch(e){}return null;}const opener=window.opener;if(!opener){alert(\"Live Bridge: open the analyzer's console window FIRST, then click this.\");return;}let token=findToken();let allowedOrigins=[];const origFetch=window.fetch.bind(window);const send=(t)=>opener.postMessage({type:\"BRIDGE_TOKEN\",token:t,origin:location.origin},\"*\");if(token)send(token);window.fetch=function(input,init){try{const h=(init&&init.headers)||(input&&input.headers);let auth=h&&(h.get?h.get(\"authorization\"):(h.authorization||h.Authorization));if(auth&&/Bearer /.test(auth)){const t=auth.replace(\"Bearer \",\"\");if(t!==token){token=t;send(t);}}}catch(e){}return origFetch(input,init);};window.addEventListener(\"message\",async(ev)=>{if(ev.source!==opener)return;const m=ev.data;if(!m)return;if(m.type===\"BRIDGE_CONFIG\"){allowedOrigins=Array.isArray(m.allowedOrigins)?m.allowedOrigins.filter((origin)=>{try{const parsed=new URL(origin);return parsed.protocol===\"https:\"&&parsed.origin===origin;}catch(e){return false;}}):[];return;}if(m.type!==\"BRIDGE_FETCH\")return;let requestOrigin=\"\";try{requestOrigin=new URL(m.url).origin;}catch(e){}if(!allowedOrigins.includes(requestOrigin)){ev.source.postMessage({type:\"BRIDGE_RESULT\",reqId:m.reqId,ok:false,status:0,error:\"blocked host\"},\"*\");return;}try{const r=await origFetch(m.url,{headers:{authorization:\"Bearer \"+token,accept:\"application/json, text/plain, */*\",zworkspace:\"default\"}});const text=await r.text();let json=null;try{json=JSON.parse(text);}catch(e){}ev.source.postMessage({type:\"BRIDGE_RESULT\",reqId:m.reqId,ok:r.ok,status:r.status,json,raw:json?null:text},\"*\");}catch(err){ev.source.postMessage({type:\"BRIDGE_RESULT\",reqId:m.reqId,ok:false,status:0,error:String(err)},\"*\");}});alert(\"Live Bridge active\"+(token?\" (token captured)\":\" (no token yet - click anything in the portal)\"));})();void 0;";
+  }
+
+  function buildBridgeBookmarklet(raw) {
+    return "javascript:(" + raw
+      .replace(/^\s*\/\/.*$/gm, "")
+      .replace(/\n\s*/g, " ")
+      .replace(/\s{2,}/g, " ")
+      .trim() + ")();void 0;";
+  }
+
+  function applyBridgeBookmarklet(code, sourceText) {
+    const link = document.getElementById("bridgeBookmarkletLink");
+    if (!link) return;
+    link.href = code;
+    link.dataset.bookmarkletCode = code;
+    link.setAttribute("draggable", "true");
+    const srcEl = document.getElementById("bridgeBookmarkletSrc");
+    if (srcEl && sourceText) srcEl.textContent = sourceText;
+  }
+
+  function prepareBridgeBookmarklet() {
+    const fallbackCode = getBridgeFallbackBookmarklet();
+    applyBridgeBookmarklet(fallbackCode, null);
+    const srcEl = document.getElementById("bridgeBookmarkletSrc");
+    if (srcEl && !srcEl.textContent) srcEl.textContent = "Loading bookmarklet source...";
+    fetch("bookmarklet/live-bridge.js")
+      .then(r => r.ok ? r.text() : Promise.reject("Fetch failed"))
+      .then(raw => {
+        applyBridgeBookmarklet(buildBridgeBookmarklet(raw), raw);
+        if (srcEl) srcEl.dataset.loaded = "true";
+      })
+      .catch(() => {
+        applyBridgeBookmarklet(fallbackCode, fallbackCode);
+      });
+  }
+
   function ensureToolbar() {
     let bar = document.getElementById("liveToolbar");
     if (bar) {
@@ -1114,24 +1152,8 @@
       bridgeModalBtn.addEventListener("click", () => {
         const modal = document.getElementById("installBridgeModal");
         if (!modal) return;
+        prepareBridgeBookmarklet();
         modal.classList.add("active");
-
-        const srcEl = document.getElementById("bridgeBookmarkletSrc");
-        if (srcEl && !srcEl.textContent) {
-          const fallbackCode = "javascript:(function liveBridge(){function findToken(){try{for(const store of[localStorage,sessionStorage]){for(let i=0;i<store.length;i++){const v=store.getItem(store.key(i));if(!v||v.indexOf(\"access_token\")<0)continue;try{const o=JSON.parse(v);if(o&&o.access_token)return o.access_token;}catch(e){}}}}catch(e){}if(window.keycloak&&window.keycloak.token)return window.keycloak.token;try{for(const store of[localStorage,sessionStorage]){for(let i=0;i<store.length;i++){const m=(store.getItem(store.key(i))||\"\").match(/eyJ[\\w-]+\\.[\\w-]+\\.[\\w-]+/);if(m)return m[0];}}}catch(e){}return null;}const opener=window.opener;if(!opener){alert(\"Live Bridge: open the analyzer's console window FIRST, then click this.\");return;}let token=findToken();let allowedOrigins=[];const origFetch=window.fetch.bind(window);const send=(t)=>opener.postMessage({type:\"BRIDGE_TOKEN\",token:t,origin:location.origin},\"*\");if(token)send(token);window.fetch=function(input,init){try{const h=(init&&init.headers)||(input&&input.headers);let auth=h&&(h.get?h.get(\"authorization\"):(h.authorization||h.Authorization));if(auth&&/Bearer /.test(auth)){const t=auth.replace(\"Bearer \",\"\");if(t!==token){token=t;send(t);}}}catch(e){}return origFetch(input,init);};window.addEventListener(\"message\",async(ev)=>{if(ev.source!==opener)return;const m=ev.data;if(!m)return;if(m.type===\"BRIDGE_CONFIG\"){allowedOrigins=Array.isArray(m.allowedOrigins)?m.allowedOrigins.filter((origin)=>{try{const parsed=new URL(origin);return parsed.protocol===\"https:\"&&parsed.origin===origin;}catch(e){return false;}}):[];return;}if(m.type!==\"BRIDGE_FETCH\")return;let requestOrigin=\"\";try{requestOrigin=new URL(m.url).origin;}catch(e){}if(!allowedOrigins.includes(requestOrigin)){ev.source.postMessage({type:\"BRIDGE_RESULT\",reqId:m.reqId,ok:false,status:0,error:\"blocked host\"},\"*\");return;}try{const r=await origFetch(m.url,{headers:{authorization:\"Bearer \"+token,accept:\"application/json, text/plain, */*\",zworkspace:\"default\"}});const text=await r.text();let json=null;try{json=JSON.parse(text);}catch(e){}ev.source.postMessage({type:\"BRIDGE_RESULT\",reqId:m.reqId,ok:r.ok,status:r.status,json,raw:json?null:text},\"*\");}catch(err){ev.source.postMessage({type:\"BRIDGE_RESULT\",reqId:m.reqId,ok:false,status:0,error:String(err)},\"*\");}});alert(\"Live Bridge active\"+(token?\" (token captured)\":\" (no token yet — click anything in the portal)\"));})();void 0;";
-
-          fetch("bookmarklet/live-bridge.js")
-            .then(r => r.ok ? r.text() : Promise.reject("Fetch failed"))
-            .then(raw => {
-              const code = "javascript:(" + raw.replace(/^\s*\/\/.*$/gm, "").replace(/\n\s*/g, " ").replace(/\s{2,}/g, " ").trim() + ")();void 0;";
-              document.getElementById("bridgeBookmarkletLink").href = code;
-              srcEl.textContent = raw;
-            })
-            .catch(() => {
-              document.getElementById("bridgeBookmarkletLink").href = fallbackCode;
-              srcEl.textContent = fallbackCode;
-            });
-        }
       });
     }
 
@@ -1144,6 +1166,16 @@
       const closeBtn = document.getElementById("closeBridgeModalBtn");
       if (closeBtn) {
         closeBtn.addEventListener("click", () => bridgeModal.classList.remove("active"));
+      }
+      const bookmarkletLink = document.getElementById("bridgeBookmarkletLink");
+      if (bookmarkletLink) {
+        bookmarkletLink.addEventListener("dragstart", (event) => {
+          const code = bookmarkletLink.dataset.bookmarkletCode || bookmarkletLink.href;
+          if (!code || !code.startsWith("javascript:") || !event.dataTransfer) return;
+          event.dataTransfer.effectAllowed = "link";
+          event.dataTransfer.setData("text/uri-list", code);
+          event.dataTransfer.setData("text/plain", code);
+        });
       }
     }
 
@@ -1844,7 +1876,7 @@
       } else if (!isDetailLoaded(n)) {
         tabContentHtml = '<div class="empty-state" style="padding:40px 20px; text-align:center;">ไม่มีข้อมูล</div>';
       } else if (activeTab === "node") {
-        const staticWf = st.ctx && st.ctx.state && st.ctx.state.workflows.find(w => w.name === n.workflowName);
+        const staticWf = findWorkflowByName((st.ctx && st.ctx.state && st.ctx.state.workflows) || [], n.workflowName);
         let staticInputHtml = `<span class="dim" style="font-size:11px;">(No static metadata found for this workflow name)</span>`;
         if (staticWf) {
           const reqFields = staticWf.dataContext?.requiredFields || [];
@@ -1920,7 +1952,7 @@
               ${(function() {
                 if (typeof window.renderDecisionMatrix === "function" && st.ctx && st.ctx.state && st.ctx.state.workflows) {
                   let staticNode = null;
-                  const staticWf = st.ctx.state.workflows.find(w => w.name === n.workflowName);
+                  const staticWf = findWorkflowByName(st.ctx.state.workflows, n.workflowName);
                   if (staticWf && staticWf.nodes) {
                     staticNode = staticWf.nodes.find(sn => sn.id === n.nodeId && sn.decisionMatrix);
                     if (!staticNode) {
@@ -1930,7 +1962,7 @@
                   
                   // Fallback: If not found in the current workflow, search by nodeId (e.g. if the node calls a decision matrix workflow of that name)
                   if (!staticNode || !staticNode.decisionMatrix) {
-                    const targetWf = st.ctx.state.workflows.find(w => w.name === n.nodeId || w.name.toLowerCase() === n.nodeId.toLowerCase());
+                    const targetWf = findWorkflowByName(st.ctx.state.workflows, n.nodeId);
                     if (targetWf && targetWf.nodes) {
                       staticNode = targetWf.nodes.find(sn => sn.decisionMatrix);
                     }
@@ -1950,7 +1982,7 @@
           `;
         }
       } else if (activeTab === "db") {
-        const staticWf = st.ctx && st.ctx.state && st.ctx.state.workflows.find(w => w.name === n.workflowName);
+        const staticWf = findWorkflowByName((st.ctx && st.ctx.state && st.ctx.state.workflows) || [], n.workflowName);
         const dbOps = (staticWf && staticWf.dbOperations) || [];
         const steps = getSteps(n);
 
@@ -2033,7 +2065,7 @@
         if (steps.length === 0) {
           tabContentHtml = '<div class="empty-state" style="padding:40px 20px; text-align:center;">ไม่มีข้อมูล</div>';
         } else {
-          const staticWf = st.ctx && st.ctx.state && st.ctx.state.workflows.find(w => w.name === n.workflowName);
+          const staticWf = findWorkflowByName((st.ctx && st.ctx.state && st.ctx.state.workflows) || [], n.workflowName);
           const dbOps = (staticWf && staticWf.dbOperations) || [];
           const stepDbMap = new Map();
 
@@ -2554,19 +2586,17 @@
       const stepName = step.Name || step.StepName || step.ActivityName || step.NodeName;
       if (stepName) {
         executedNames.add(stepName);
-        executedNames.add(stepName.toLowerCase().trim());
+        executedNames.add(String(stepName).toLowerCase().trim());
       }
       const activityId = step.ActivityId || step.StepId || step.NodeId;
       if (activityId) {
         executedNames.add(activityId);
-        executedNames.add(activityId.toLowerCase().trim());
+        executedNames.add(String(activityId).toLowerCase().trim());
       }
     });
 
     const staticWorkflows = (st.ctx && st.ctx.state && st.ctx.state.workflows) || [];
-    const targetWf = staticWorkflows.find(
-      (w) => w.name.toLowerCase() === workflowName.toLowerCase()
-    );
+    const targetWf = findWorkflowByName(staticWorkflows, workflowName);
 
     if (!targetWf) {
       alert(`Workflow "${workflowName}" was not found in the local Zoral index.\nEnsure the workflow files are indexed.`);
@@ -2775,7 +2805,8 @@
     const tableOpsMap = new Map();
 
     // Check static mappings if we have a table match or custom query
-    const staticWf = st.ctx && st.ctx.state && st.ctx.state.workflows.find(w => w.name === st.graph.byId.get(st.selected).workflowName);
+    const selectedProcess = st.graph && st.selected ? st.graph.byId.get(st.selected) : null;
+    const staticWf = findWorkflowByName((st.ctx && st.ctx.state && st.ctx.state.workflows) || [], selectedProcess && selectedProcess.workflowName);
     const dbOps = (staticWf && staticWf.dbOperations) || [];
     const nodeId = step.ActivityId || step.StepId || step.NodeId || step.ActivityName || stepName;
     const nodeIdLower = String(nodeId || "").toLowerCase();
