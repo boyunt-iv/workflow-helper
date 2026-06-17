@@ -262,7 +262,7 @@ body.live-active .diagram-canvas {
 }
 
 .trace-tree-col {
-  width: 400px;
+  width: var(--tree-col-width, 50%);
   flex-shrink: 0;
   border-right: 1px solid #1e293b;
   padding: 0 16px;
@@ -271,6 +271,12 @@ body.live-active .diagram-canvas {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.trace-header-row .trace-tree-col {
+  resize: horizontal;
+  max-width: 80vw;
+  min-width: 200px;
 }
 
 .trace-timeline-col {
@@ -326,8 +332,11 @@ body.live-active .diagram-canvas {
 }
 
 .trace-row.active {
-  background-color: #1e293b;
-  border-left-color: #2563eb;
+  background-color: rgba(37, 99, 235, 0.12);
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
+  position: relative;
+  z-index: 2;
 }
 
 /* Tree line indent guides */
@@ -632,9 +641,11 @@ body.live-active .diagram-canvas {
 }
 /* Currently-focused match row */
 .trace-row.filter-current {
-  outline: 2px solid #2563eb;
+  outline: 2px solid #f59e0b;
   outline-offset: -2px;
-  background: rgba(37, 99, 235, 0.12);
+  background: rgba(245, 158, 11, 0.12);
+  position: relative;
+  z-index: 1;
 }
 
 /* Hover ruler timestamp label */
