@@ -141,9 +141,10 @@
     const importBtn = document.getElementById("liveImport");
     const exportBtn = document.getElementById("liveExport");
     if (runBtn) {
-      runBtn.disabled = !enabled;
+      // Run Bridge button does not need to be disabled. Make it clickable again while running.
+      runBtn.disabled = false;
       runBtn.textContent = enabled ? "Run (bridge)" : "Running... ⏳";
-      runBtn.style.opacity = enabled ? "" : "0.7";
+      runBtn.style.opacity = "";
     }
     if (importBtn) {
       importBtn.disabled = !enabled;
@@ -1063,8 +1064,19 @@
     }
   }
 
+  function refreshViewSelection() {
+    const selected = st.selected || "";
+    document.querySelectorAll(".trace-row").forEach((row) => {
+      row.classList.toggle("active", row.dataset.rid === selected);
+    });
+    document.querySelectorAll(".live-tree-node").forEach((node) => {
+      node.classList.toggle("active", node.dataset.rid === selected);
+    });
+  }
+
   function toggleView() {
     st.view = st.view === "gantt" ? "tree" : "gantt";
+    if (L()) L().shouldScrollToMatch = true;
     updateViewButton();
     renderView();
   }
@@ -1076,6 +1088,9 @@
       st.selected = rid;
     }
     L().selectedId = st.selected;
+    if (L()) {
+      L().shouldScrollToMatch = false; // Prevent jumping back to filter match on timeline selection
+    }
     document.querySelectorAll(".live-result").forEach((c) => c.classList.toggle("active", c.dataset.rid === st.selected));
     if (st.selected && st.ctx && st.ctx.state) {
       st.ctx.state.panes.detail = true;
@@ -1096,7 +1111,7 @@
         }
       }
     }
-    renderView();
+    refreshViewSelection();
     renderDetail();
   }
 
@@ -1615,6 +1630,36 @@
                 <div style="font-weight:600; font-size:11px; color:var(--text-muted, #64748b); margin-bottom:8px;">Live Output Payload / Result:</div>
                 ${liveOutputHtml}
               </div>
+              
+              ${(function() {
+                if (typeof window.renderDecisionMatrix === "function" && st.ctx && st.ctx.state && st.ctx.state.workflows) {
+                  let staticNode = null;
+                  const staticWf = st.ctx.state.workflows.find(w => w.name === n.workflowName);
+                  if (staticWf && staticWf.nodes) {
+                    staticNode = staticWf.nodes.find(sn => sn.id === n.nodeId && sn.decisionMatrix);
+                    if (!staticNode) {
+                      staticNode = staticWf.nodes.find(sn => sn.decisionMatrix);
+                    }
+                  }
+                  
+                  // Fallback: If not found in the current workflow, search by nodeId (e.g. if the node calls a decision matrix workflow of that name)
+                  if (!staticNode || !staticNode.decisionMatrix) {
+                    const targetWf = st.ctx.state.workflows.find(w => w.name === n.nodeId || w.name.toLowerCase() === n.nodeId.toLowerCase());
+                    if (targetWf && targetWf.nodes) {
+                      staticNode = targetWf.nodes.find(sn => sn.decisionMatrix);
+                    }
+                  }
+
+                  if (staticNode && staticNode.decisionMatrix) {
+                    return `<div style="margin-top:16px;">
+                              <div style="font-weight:600; font-size:11px; color:var(--accent, #3b82f6); margin-bottom:8px;">Matched Decision Matrix:</div>
+                              ${window.renderDecisionMatrix(staticNode, liveOutput, liveInput)}
+                            </div>`;
+                  }
+                }
+                return "";
+              })()}
+              
             </section>
           `;
         }
@@ -1859,6 +1904,12 @@
       setBridge("no token — click bookmarklet", false);
       return;
     }
+    
+    // If already running, cancel the active task before initiating a new one
+    if (activeAutoFetches > 0 || requestQueue.length > 0) {
+      stopFetching();
+    }
+    
     configureBridge();
 
     const tag = collectTagFilter();
@@ -2309,6 +2360,72 @@
     });
   };
 
+  function normalizeName(value) {
+    return String(value || "").toLowerCase().trim();
+  }
+
+  function findWorkflowByName(workflows, name) {
+    const target = normalizeName(name);
+    if (!target) return null;
+    return workflows.find((workflow) => normalizeName(workflow.name) === target) || null;
+  }
+
+  function findDecisionMatrixNodeInWorkflow(workflow) {
+    return workflow && Array.isArray(workflow.nodes)
+      ? workflow.nodes.find((node) => node.decisionMatrix) || null
+      : null;
+  }
+
+  function getStepDecisionMatrixNode(step) {
+    const workflows = (st.ctx && st.ctx.state && st.ctx.state.workflows) || [];
+    if (!workflows.length || !st.graph || !st.selected || !step) return null;
+
+    const processNode = st.graph.byId.get(st.selected);
+    const staticWorkflow = findWorkflowByName(workflows, processNode && processNode.workflowName);
+    const stepName = step.Name || step.StepName || step.ActivityName || step.NodeName || "";
+    const stepNodeId = step.ActivityId || step.StepId || step.NodeId || step.ActivityName || stepName;
+    const candidateNames = [
+      stepNodeId,
+      stepName,
+      step.ReferenceName,
+      step.NextItemName,
+      step.ChildRequestType,
+    ].filter(Boolean);
+
+    if (staticWorkflow && Array.isArray(staticWorkflow.nodes)) {
+      for (const candidateName of [...candidateNames]) {
+        const candidate = normalizeName(candidateName);
+        const staticNode = staticWorkflow.nodes.find((node) =>
+          normalizeName(node.id) === candidate ||
+          normalizeName(node.name) === candidate ||
+          normalizeName(node.callName) === candidate
+        );
+        if (staticNode && staticNode.decisionMatrix) return staticNode;
+        if (staticNode && staticNode.callName) candidateNames.push(staticNode.callName);
+      }
+    }
+
+    for (const candidateName of candidateNames) {
+      const decisionWorkflow = findWorkflowByName(workflows, candidateName);
+      const decisionNode = findDecisionMatrixNodeInWorkflow(decisionWorkflow);
+      if (decisionNode) return decisionNode;
+    }
+
+    return null;
+  }
+
+  function renderStepDecisionMatrixHtml(step, inputJson, outputJson) {
+    if (typeof window.renderDecisionMatrix !== "function") return "";
+    const matrixNode = getStepDecisionMatrixNode(step);
+    if (!matrixNode || !matrixNode.decisionMatrix) return "";
+    return `
+      <div style="margin-top:16px;">
+        <div style="font-weight:600; font-size:11px; color:var(--accent); margin-bottom:8px;">Matched Decision Matrix:</div>
+        ${window.renderDecisionMatrix(matrixNode, outputJson, inputJson)}
+      </div>
+    `;
+  }
+
   window.showStepDetailModal = function (step, stepNo, stepsList) {
     let modal = document.getElementById("liveStepModal");
     if (!modal) {
@@ -2349,9 +2466,10 @@
     const inputJson = getPayloadObj(step.InputJson || step.Input || step.Variables || step.WorkflowInputJson || step.workflowInputJson);
     const outputJson = getPayloadObj(step.OutputJson || step.Output || step.Result || step.WorkflowOutputJson || step.workflowOutputJson);
 
-    // Determine active step info
     const stepName = step.Name || step.StepName || step.ActivityName || step.NodeName || "(unnamed step)";
     const stepType = step.Type || step.StepType || step.ActivityType || step.NodeType || "Task";
+    const stepRequestId = step.RequestId || step.requestId || step.WorkflowRequestId || step.workflowRequestId || "";
+    const childRequestId = step.ChildRequestId || step.childRequestId || "";
     const start = step.RequestDateTime || step.Start || "";
     const end = step.ResponseDateTime || step.End || "";
     const duration = step.DurationMs ?? step.Duration ?? (start && end ? (Date.parse(end) - Date.parse(start)) : null);
@@ -2468,6 +2586,7 @@
 
     // Flat / deep diffing
     const diffHtml = renderPayloadDiff(inputJson, outputJson);
+    const decisionMatrixHtml = renderStepDecisionMatrixHtml(step, inputJson, outputJson);
 
     modal.innerHTML = `
       <div class="live-modal-card">
@@ -2487,6 +2606,8 @@
         
         <div class="live-modal-body">
           <div class="live-modal-metadata-grid">
+            ${stepRequestId ? `<div class="kv"><span>Request ID</span><span style="font-family:monospace; font-weight:600;">${escapeHtml(stepRequestId)}</span></div>` : ""}
+            ${childRequestId ? `<div class="kv"><span>Child Request ID</span><span style="font-family:monospace; font-weight:600; color:var(--accent);">${escapeHtml(childRequestId)}</span></div>` : ""}
             <div class="kv"><span>Start Time</span><span>${escapeHtml(formatDateTime(start))}</span></div>
             <div class="kv"><span>End Time</span><span>${escapeHtml(formatDateTime(end))}</span></div>
             <div class="kv"><span>Duration</span><span>${escapeHtml(durText)}</span></div>
@@ -2512,6 +2633,7 @@
                 ${renderPayloadView(outputJson, "Output Payload / Result", "modalOutputTree")}
               </div>
             </div>
+            ${decisionMatrixHtml}
           </div>
           <div id="modalDiffContent" class="live-modal-tab-content">
             <div class="live-modal-payload-header">
@@ -2707,6 +2829,7 @@
       document.body.classList.add("live-active");
       ensureToolbar();
       L().onSelect = select;
+      if (L()) L().shouldScrollToMatch = true;
       L().onCollapseToggle = () => renderView();
       st.wasResultsPaneOpen = ctx.state.panes.results;
       ctx.state.panes.results = false;

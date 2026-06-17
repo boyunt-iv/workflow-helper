@@ -66,8 +66,14 @@
     const t1Str = formatTimeShort(t1);
     const tMidStr = formatTimeShort(t0 + span / 2);
 
+    let defaultWidth = "400px";
+    if (host && host.clientWidth > 0) {
+      defaultWidth = Math.floor(host.clientWidth / 2) + "px";
+    }
+    const savedWidth = window.liveTreeColWidth || defaultWidth;
+
     let html = `
-      <div class="trace-viewer">
+      <div class="trace-viewer" style="--tree-col-width: ${savedWidth};">
         <div class="trace-header-row">
           <div class="trace-tree-col" style="display:flex; justify-content:space-between; align-items:center; gap:4px;">
             <span>Workflow Hierarchy</span>
@@ -75,6 +81,7 @@
               <input type="text" class="trace-filter-input" placeholder="Filter..." style="width:78px; font-size:11px; padding:3px 6px; background:#0f1420; border:1px solid #2f3b54; color:#e6ebf5; border-radius:4px; outline:none; font-family:inherit;" />
               <select class="trace-filter-type" style="width:78px; font-size:11px; padding:3px 4px; background:#0f1420; border:1px solid #2f3b54; color:#e6ebf5; border-radius:4px; outline:none; font-family:inherit; cursor:pointer;">
                 <option value="workflow">Workflow</option>
+                <option value="step">Step Name</option>
                 <option value="requestId">Request ID</option>
                 <option value="table">Table</option>
                 <option value="field">Field</option>
@@ -252,6 +259,26 @@
       viewer.addEventListener("mouseleave", () => {
         ruler.style.display = "none";
       });
+      
+      const headerTreeCol = viewer.querySelector(".trace-header-row .trace-tree-col");
+      if (headerTreeCol && window.ResizeObserver) {
+        // Only restore inline width if user previously resized
+        if (window.liveTreeColWidth) {
+          headerTreeCol.style.width = window.liveTreeColWidth;
+        }
+
+        const ro = new ResizeObserver((entries) => {
+          for (let entry of entries) {
+            // Only update if the user actually dragged the resize handle (which sets inline style.width)
+            if (entry.target.style.width) {
+              const newWidth = entry.target.style.width;
+              window.liveTreeColWidth = newWidth;
+              viewer.style.setProperty('--tree-col-width', newWidth);
+            }
+          }
+        });
+        ro.observe(headerTreeCol);
+      }
     }
 
     // Caret click setup
@@ -277,7 +304,9 @@
 
     // Match navigation state (rebuilt on every applyFilter)
     let matchedRows = [];
-    let currentMatch = -1;
+    if (L().filterMatchIndex === undefined) {
+      L().filterMatchIndex = -1;
+    }
 
     function updateCount() {
       const total = matchedRows.length;
@@ -286,7 +315,7 @@
       if (nextBtn) nextBtn.disabled = total === 0;
       if (!countEl) return;
       if (!hasText) { countEl.textContent = ""; return; }
-      const cur = currentMatch >= 0 ? currentMatch + 1 : 0;
+      const cur = L().filterMatchIndex >= 0 ? L().filterMatchIndex + 1 : 0;
       countEl.textContent = `${cur}/${total}`;
       countEl.classList.toggle("no-match", total === 0);
     }
@@ -294,9 +323,12 @@
     function gotoMatch(dir) {
       if (matchedRows.length === 0) return;
       matchedRows.forEach((r) => r.classList.remove("filter-current"));
-      if (currentMatch === -1) currentMatch = dir > 0 ? 0 : matchedRows.length - 1;
-      else currentMatch = (currentMatch + dir + matchedRows.length) % matchedRows.length;
-      const row = matchedRows[currentMatch];
+      if (L().filterMatchIndex === -1) {
+        L().filterMatchIndex = dir > 0 ? 0 : matchedRows.length - 1;
+      } else {
+        L().filterMatchIndex = (L().filterMatchIndex + dir + matchedRows.length) % matchedRows.length;
+      }
+      const row = matchedRows[L().filterMatchIndex];
       row.classList.add("filter-current");
       // Scroll ONLY the diagram canvas — never use row.scrollIntoView(), which
       // bubbles up and scrolls the window, pushing the diagram header off-screen
@@ -316,6 +348,7 @@
       if (filterInput) {
         const placeholders = {
           workflow: "Filter workflows...",
+          step: "Filter step names...",
           requestId: "Filter Request IDs...",
           table: "Filter tables...",
           field: "Filter fields...",
@@ -326,8 +359,13 @@
         filterInput.placeholder = placeholders[type] || "Filter...";
       }
 
+      if (text !== (L().lastFilterText || "") || type !== (L().lastFilterType || "workflow")) {
+        L().filterMatchIndex = -1;
+        L().lastFilterText = text;
+        L().lastFilterType = type;
+      }
+
       matchedRows = [];
-      currentMatch = -1;
       const hasText = !!text;
       host.querySelectorAll(".trace-row.filter-current").forEach((r) => r.classList.remove("filter-current"));
 
@@ -343,6 +381,15 @@
           if (type === "workflow") {
             const name = n.workflowName ? n.workflowName.toLowerCase() : "";
             match = name.includes(text);
+          } else if (type === "step") {
+            const rawObj = n.raw || {};
+            const r = rawObj.Request || {};
+            const steps = rawObj.ProcessItems || r.ProcessItems || rawObj.Steps || r.Steps || rawObj.ActivitySteps || [];
+            match = steps.some(step => {
+              const stepName = step.Name || step.StepName || step.ActivityName || step.NodeName || "";
+              const activityId = step.ActivityId || step.StepId || step.NodeId || "";
+              return stepName.toLowerCase().includes(text) || activityId.toLowerCase().includes(text);
+            });
           } else if (type === "requestId") {
             const reqId = n.requestId ? n.requestId.toLowerCase() : "";
             match = reqId.includes(text);
@@ -412,6 +459,21 @@
         }
       });
 
+      if (hasText && L().filterMatchIndex >= 0 && L().filterMatchIndex < matchedRows.length) {
+        const row = matchedRows[L().filterMatchIndex];
+        row.classList.add("filter-current");
+        // Scroll to it on initial restoration
+        if (L().shouldScrollToMatch) {
+          setTimeout(() => {
+            const cRect = host.getBoundingClientRect();
+            const rRect = row.getBoundingClientRect();
+            const delta = (rRect.top - cRect.top) - (host.clientHeight / 2) + (rRect.height / 2);
+            host.scrollTo({ top: Math.max(0, host.scrollTop + delta), behavior: "auto" });
+          }, 50);
+          L().shouldScrollToMatch = false;
+        }
+      }
+
       updateCount();
     }
 
@@ -448,6 +510,14 @@
     
     host.querySelectorAll(".trace-row").forEach((r) => {
       r.addEventListener("click", () => {
+        const clickedIndex = matchedRows.indexOf(r);
+        if (clickedIndex >= 0) {
+          L().filterMatchIndex = clickedIndex;
+        } else {
+          L().filterMatchIndex = -1;
+        }
+        host.querySelectorAll(".trace-row.filter-current").forEach((row) => row.classList.remove("filter-current"));
+        r.classList.add("filter-current");
         L().onSelect && L().onSelect(r.dataset.rid);
       });
     });
@@ -548,7 +618,11 @@
     collapsedIds: new Set(),
     onCollapseToggle: null,
     filterText: "",
-    filterType: "workflow"
+    filterType: "workflow",
+    filterMatchIndex: -1,
+    lastFilterText: "",
+    lastFilterType: "workflow",
+    shouldScrollToMatch: true
   };
   root.WorkflowLive = Object.assign(root.WorkflowLive || {}, api);
 })(window);
