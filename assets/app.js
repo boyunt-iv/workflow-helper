@@ -4754,6 +4754,7 @@ function renderNodeDetail(workflow) {
       ${renderIoRows(node.outputRows || [])}
     </section>
 
+    ${renderDecisionMatrix(node)}
     ${node.conditionScript ? renderCodeSection("Condition / Rules", node.conditionScript) : ""}
     ${node.inputScript ? renderCodeSection("Input Script", node.inputScript) : ""}
     ${node.outputScript ? renderCodeSection("Output Script", node.outputScript) : ""}
@@ -4762,6 +4763,207 @@ function renderNodeDetail(workflow) {
       <h3>Node DB / GraphQL</h3>
       ${renderOperationsTable(nodeOps, { showNode: false })}
       ${nodeSnippets.map((item) => renderCodeSection(`GraphQL Snippet`, item.snippet)).join("")}
+    </section>
+  `;
+}
+
+function formatDecisionMatrixCell(val) {
+  if (val == null || val === "") return "-";
+  let str = escapeHtml(String(val));
+  // Replace all spaces with non-breaking spaces so variables don't wrap randomly
+  str = str.replace(/ /g, "&nbsp;");
+  // Allow wrapping AFTER logical operators: ||, &&, OR, AND
+  // Since spaces are now &nbsp;, we match those.
+  str = str.replace(/(&nbsp;\|\|&nbsp;|&nbsp;&amp;&amp;&nbsp;|&nbsp;OR&nbsp;|&nbsp;AND&nbsp;)/gi, "$1<wbr> ");
+  return str;
+}
+
+function findValueByKey(obj, key) {
+  if (!obj || typeof obj !== "object") return undefined;
+  if (key in obj) return obj[key];
+  for (const k of Object.keys(obj)) {
+    const val = findValueByKey(obj[k], key);
+    if (val !== undefined) return val;
+  }
+  return undefined;
+}
+
+function evaluateExpression(expr, context) {
+  try {
+    if (!expr || !expr.trim()) return false;
+    const reservedWords = new Set([
+      "break", "case", "catch", "class", "const", "continue", "debugger", "default",
+      "delete", "do", "else", "export", "extends", "finally", "for", "function",
+      "if", "import", "in", "instanceof", "let", "new", "return", "super",
+      "switch", "this", "throw", "try", "typeof", "var", "void", "while",
+      "with", "yield", "true", "false", "null", "undefined",
+    ]);
+    const keys = [];
+    const vals = [];
+    for (const [k, v] of Object.entries(context)) {
+      const normalizedKey = k.toLowerCase();
+      if (!/^[a-z_$][a-z0-9_$]*$/i.test(normalizedKey) || reservedWords.has(normalizedKey)) {
+        continue;
+      }
+      keys.push(normalizedKey);
+      vals.push(typeof v === "string" ? v.trim().toLowerCase() : v);
+    }
+    let normalized = expr
+      .toLowerCase()
+      .replace(/\bor\b/gi, " || ")
+      .replace(/\band\b/gi, " && ");
+    const fn = new Function(...keys, `return (${normalized});`);
+    return fn(...vals);
+  } catch (e) {
+    console.warn("Evaluation error for expression:", expr, e);
+    return false;
+  }
+}
+
+function normalizeDecisionMatrixValue(value) {
+  if (typeof window.LivePresentation?.normalizeDecisionMatrixValue === "function") {
+    return window.LivePresentation.normalizeDecisionMatrixValue(value);
+  }
+  if (value === null || value === undefined) return "";
+  let normalized = value;
+  for (let i = 0; i < 2; i++) {
+    if (typeof normalized !== "string") break;
+    const trimmed = normalized.trim();
+    if (!trimmed) return "";
+    if (
+      (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+      (trimmed.startsWith("'") && trimmed.endsWith("'"))
+    ) {
+      try {
+        normalized = JSON.parse(trimmed);
+        continue;
+      } catch (_) {
+        normalized = trimmed.slice(1, -1);
+        continue;
+      }
+    }
+    break;
+  }
+  return typeof normalized === "string" ? normalized.trim() : normalized;
+}
+
+function normalizeDecisionMatrixComparable(value) {
+  const normalized = normalizeDecisionMatrixValue(value);
+  return typeof normalized === "string" ? normalized.toLowerCase() : String(normalized).toLowerCase();
+}
+
+function isDecisionMatrixWildcard(value) {
+  if (typeof window.LivePresentation?.isDecisionMatrixWildcard === "function") {
+    return window.LivePresentation.isDecisionMatrixWildcard(value);
+  }
+  const normalized = normalizeDecisionMatrixComparable(value);
+  return normalized === "" || normalized === "-";
+}
+
+function decisionMatrixValuesEqual(actual, expected) {
+  if (typeof window.LivePresentation?.decisionMatrixValuesEqual === "function") {
+    return window.LivePresentation.decisionMatrixValuesEqual(actual, expected);
+  }
+  if (isDecisionMatrixWildcard(expected)) return true;
+  return normalizeDecisionMatrixComparable(actual) === normalizeDecisionMatrixComparable(expected);
+}
+
+function getDecisionMatrixOutputPayload(liveOutputObj) {
+  if (typeof window.LivePresentation?.getDecisionMatrixOutputPayload === "function") {
+    return window.LivePresentation.getDecisionMatrixOutputPayload(liveOutputObj);
+  }
+  if (!liveOutputObj || typeof liveOutputObj !== "object") return liveOutputObj;
+  const runtimeOutput = findKeyValueRecursive(liveOutputObj, "RuntimeOutput");
+  return runtimeOutput && typeof runtimeOutput === "object" ? runtimeOutput : liveOutputObj;
+}
+
+function renderDecisionMatrix(node, liveOutputObj = null, liveInputObj = null, globalVarsObj = null) {
+  if (!node.decisionMatrix) return "";
+  const { columns, rows, decisionMatrixType } = node.decisionMatrix;
+  if (!columns || !columns.length) return "";
+  
+  const headers = columns.map(c => `<th style="white-space: nowrap;">${escapeHtml(c.id)} <br><small class="muted" style="font-weight:normal">${escapeHtml(c.use || c.type)}</small></th>`).join("");
+  
+  const context = {};
+  columns.forEach(c => {
+    const isOutput = String(c.use || "").toLowerCase().includes("output") || 
+                     String(c.use || "").toLowerCase().includes("result");
+    if (isOutput) return;
+    let val = undefined;
+    if (liveInputObj) val = findKeyValueRecursive(liveInputObj, c.id);
+    if (val === undefined && globalVarsObj) val = findKeyValueRecursive(globalVarsObj, c.id);
+    val = normalizeDecisionMatrixValue(val);
+    context[c.id] = val;
+  });
+
+  const trs = rows.map(r => {
+    let isMatch = false;
+    if (typeof window.LivePresentation?.doesDecisionMatrixRowMatch === "function") {
+      isMatch = window.LivePresentation.doesDecisionMatrixRowMatch(columns, r, liveOutputObj, liveInputObj, globalVarsObj);
+    } else if ((liveInputObj || globalVarsObj) && columns.length > 0) {
+      let inputChecked = false;
+      let inputMatch = true;
+
+      columns.forEach(c => {
+        const isOutput = String(c.use || "").toLowerCase().includes("output") || 
+                         String(c.use || "").toLowerCase().includes("result");
+        if (isOutput) return;
+        
+        const cell = r.values.find(val => val.column === c.id);
+        if (!cell) return;
+
+        const cellVal = cell.expression || (cell.value ?? "");
+        const cellValStr = normalizeDecisionMatrixValue(cellVal);
+
+        // Input column (MatchValue / input)
+        if (liveInputObj || globalVarsObj) {
+          inputChecked = true;
+          if (!isDecisionMatrixWildcard(cellValStr)) {
+            if (cell.expression) {
+              if (!evaluateExpression(cell.expression, context)) {
+                inputMatch = false;
+              }
+            } else {
+              let actualVal = undefined;
+              if (liveInputObj) actualVal = findKeyValueRecursive(liveInputObj, c.id);
+              if (actualVal === undefined && globalVarsObj) actualVal = findKeyValueRecursive(globalVarsObj, c.id);
+              
+              if (actualVal !== undefined) {
+                if (!decisionMatrixValuesEqual(actualVal, cellValStr)) {
+                  inputMatch = false;
+                }
+              } else {
+                inputMatch = false;
+              }
+            }
+          }
+        }
+      });
+
+      isMatch = inputChecked ? inputMatch : false;
+    }
+    
+    const trStyle = isMatch ? 'background-color: rgba(245, 158, 11, 0.25); outline: 2px solid #f59e0b; outline-offset: -2px;' : '';
+    const tdStyle = isMatch ? ' style="background-color: rgba(245, 158, 11, 0.28); box-shadow: inset 0 2px #f59e0b, inset 0 -2px #f59e0b;"' : '';
+    
+    const tds = columns.map(c => {
+      const v = r.values.find(val => val.column === c.id);
+      if (!v) return `<td${tdStyle}>-</td>`;
+      const displayValue = v.expression ? v.expression : v.value;
+      return `<td${tdStyle}>${formatDecisionMatrixCell(displayValue)}</td>`;
+    }).join("");
+    return `<tr style="${trStyle}">${tds}</tr>`;
+  }).join("");
+
+  return `
+    <section class="detail-section">
+      <h3>Decision Matrix <small class="muted" style="font-weight:normal; font-size: 0.85em;">(${escapeHtml(decisionMatrixType)})</small></h3>
+      <div style="overflow-x: auto;">
+        <table class="table">
+          <thead><tr>${headers}</tr></thead>
+          <tbody>${trs}</tbody>
+        </table>
+      </div>
     </section>
   `;
 }
@@ -5402,6 +5604,8 @@ function renderLiveExecDetail(workflow) {
     const runNumber = matchedSteps.length > 1 ? `<span style="font-size: 12px; background: var(--bg-hover); padding: 2px 8px; border-radius: 4px; font-weight:bold; color:var(--accent);">Run #${idx + 1}</span>` : "";
     const stepName = step.Name || step.StepName || step.ActivityName || step.NodeName || "(unnamed)";
     const stepType = step.Type || step.StepType || step.ActivityType || step.NodeType || "Task";
+    const stepRequestId = step.RequestId || step.requestId || step.WorkflowRequestId || step.workflowRequestId || "";
+    const childRequestId = step.ChildRequestId || step.childRequestId || "";
     const start = step.RequestDateTime || step.Start || "";
     const end = step.ResponseDateTime || step.End || "";
     const duration = step.DurationMs ?? step.Duration ?? (start && end ? (Date.parse(end) - Date.parse(start)) : null);
@@ -5537,6 +5741,8 @@ function renderLiveExecDetail(workflow) {
         </div>
 
         <div style="display:flex; flex-direction:column; gap:4px; font-size:11px; margin-bottom:12px;">
+          ${stepRequestId ? `<div class="kv"><span>Request ID</span><span style="font-family:monospace; font-weight:600;">${escapeHtml(stepRequestId)}</span></div>` : ""}
+          ${childRequestId ? `<div class="kv"><span>Child Request ID</span><span style="font-family:monospace; font-weight:600; color:var(--accent, #3b82f6);">${escapeHtml(childRequestId)}</span></div>` : ""}
           <div class="kv"><span>Start Time</span><span>${escapeHtml(start ? new Date(start).toLocaleString() : "")}</span></div>
           <div class="kv"><span>End Time</span><span>${escapeHtml(end ? new Date(end).toLocaleString() : "")}</span></div>
         </div>
@@ -5570,6 +5776,47 @@ function renderLiveExecDetail(workflow) {
           </div>
           ${outputHtml}
         </div>
+
+        ${(function() {
+          let dmNode = null;
+          if (node && node.decisionMatrix) {
+            dmNode = node;
+          } else {
+            const isDecisionType = (node && node.type === "decision") || 
+                                   (stepType && String(stepType).toLowerCase() === "decision");
+            if (isDecisionType) {
+              const possibleNames = [
+                node && node.callName,
+                node && node.id,
+                step.Name,
+                step.StepName,
+                step.ActivityName,
+                step.NodeName
+              ].filter(Boolean);
+              
+              for (const wfName of possibleNames) {
+                const targetWf = state.workflows.find(w => w.name === wfName || w.name.toLowerCase() === wfName.toLowerCase());
+                if (targetWf && targetWf.nodes) {
+                  const found = targetWf.nodes.find(sn => sn.decisionMatrix);
+                  if (found) {
+                    dmNode = found;
+                    break;
+                  }
+                }
+              }
+            }
+          }
+
+          if (dmNode && dmNode.decisionMatrix) {
+            return `
+              <div style="margin-top:16px;">
+                <div style="font-weight:600; font-size:11px; color:var(--accent, #3b82f6); margin-bottom:8px;">Matched Decision Matrix:</div>
+                ${renderDecisionMatrix(dmNode, outputJson, inputJson)}
+              </div>
+            `;
+          }
+          return "";
+        })()}
       </div>
     `;
   });
