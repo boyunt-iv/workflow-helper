@@ -29,6 +29,9 @@
   let activeAutoFetches = 0;
   let loadingActive = false;
   const jsonPayloads = new Map();
+  const TRACE_ENCRYPTION_FORMAT = "workflow-helper-encrypted-trace";
+  const TRACE_ENCRYPTION_VERSION = 1;
+  const TRACE_KDF_ITERATIONS = 310000;
   const jsonSearchStates = new Map();
   // Requested direct-list page size. The *effective* size (st.effPageSize) is
   // captured from page 1 in case the server caps it below this value.
@@ -387,6 +390,288 @@
   function envList() { return (root.ANALYZER_ENV && root.ANALYZER_ENV.environments) || []; }
   function curEnv() { return envList().find((e) => e.key === st.env) || envList()[0] || null; }
   function tagDefinitions() { return root.ANALYZER_ENV?.liveApi?.tags || []; }
+
+  function hasWebCrypto() {
+    return !!(root.crypto && root.crypto.subtle && root.crypto.getRandomValues);
+  }
+
+  function bytesToBase64(bytes) {
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+    }
+    return btoa(binary);
+  }
+
+  function base64ToBytes(value) {
+    const binary = atob(String(value || ""));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  }
+
+  function validateTracePasscode(passcode) {
+    if (typeof passcode !== "string" || passcode.length < 8) {
+      return "Passcode must be at least 8 characters.";
+    }
+    if (!/[A-Z]/.test(passcode)) return "Passcode must include at least one uppercase letter.";
+    if (!/[a-z]/.test(passcode)) return "Passcode must include at least one lowercase letter.";
+    if (!/[0-9]/.test(passcode)) return "Passcode must include at least one number.";
+    if (!/[^A-Za-z0-9]/.test(passcode)) return "Passcode must include at least one special character.";
+    return "";
+  }
+
+  function closeTracePasscodeDialog(dialog, onKeydown) {
+    document.removeEventListener("keydown", onKeydown);
+    dialog.classList.remove("active");
+    setTimeout(() => dialog.remove(), 120);
+  }
+
+  const traceEyeIcon = '<svg viewBox="0 0 24 24" aria-hidden="true" style="width:16px;height:16px;"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/></svg>';
+  const traceEyeOffIcon = '<svg viewBox="0 0 24 24" aria-hidden="true" style="width:16px;height:16px;"><path d="m3 3 18 18" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10.6 10.6a3 3 0 0 0 4.2 4.2M9.5 5.8A11 11 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-3.2 4.2M6.2 6.8A18.4 18.4 0 0 0 2 12s3.5 7 10 7a10.8 10.8 0 0 0 4.1-.8" fill="none" stroke="currentColor" stroke-width="2"/></svg>';
+
+  function renderTracePasscodeInput(id) {
+    return `
+      <div style="position:relative; width:100%;">
+        <input id="${id}" type="password" autocomplete="new-password"
+          style="width:100%; min-width:0; padding:8px 38px 8px 10px; border:1px solid var(--line); border-radius:6px; font-family:inherit;" />
+        <button type="button" data-action="toggle-passcode" data-target="${id}" aria-label="Show passcode" title="Show passcode" aria-pressed="false"
+          style="position:absolute; right:6px; top:50%; transform:translateY(-50%); width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border:0; background:transparent; color:var(--muted); cursor:pointer; padding:0;">
+          ${traceEyeIcon}
+        </button>
+      </div>
+    `;
+  }
+
+  function openTracePasscodeDialog(options) {
+    return new Promise((resolve) => {
+      const isExport = options.mode === "export";
+      const dialog = document.createElement("div");
+      dialog.className = "live-modal-overlay active";
+      dialog.innerHTML = `
+        <div class="live-modal-card" style="max-width:520px;">
+          <div class="live-modal-header">
+            <div class="live-modal-header-left">
+              <h3 class="live-modal-title">${isExport ? "Encrypt Trace Export" : "Unlock Encrypted Trace"}</h3>
+            </div>
+            <button type="button" class="live-modal-close" data-action="cancel">&times;</button>
+          </div>
+          <div class="live-modal-body">
+            <p class="dim" style="font-size:12px; margin-top:0;">
+              ${isExport
+                ? "Create a passcode for this PRD/PROD trace export. Keep it safely; the file cannot be imported without it."
+                : `This trace file is encrypted${options.fileName ? `: ${escapeHtml(options.fileName)}` : ""}. Enter the export passcode to import it.`
+              }
+            </p>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              <label class="kv" style="align-items:flex-start;">
+                <span>Passcode</span>
+                ${renderTracePasscodeInput("tracePasscodeInput")}
+              </label>
+              ${isExport ? `
+                <label class="kv" style="align-items:flex-start;">
+                  <span>Confirm</span>
+                  ${renderTracePasscodeInput("tracePasscodeConfirmInput")}
+                </label>
+                <div class="dim" style="font-size:11px;">Minimum: 8 characters with uppercase, lowercase, number, and special character.</div>
+              ` : ""}
+              <div id="tracePasscodeError" style="min-height:18px; color:var(--danger); font-size:12px; font-weight:600;"></div>
+              <div style="display:flex; justify-content:flex-end; gap:8px;">
+                <button type="button" class="live-modal-nav-btn" data-action="cancel">Cancel</button>
+                <button type="button" class="live-run" data-action="submit">${isExport ? "Encrypt Export" : "Import Trace"}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(dialog);
+
+      const passcodeInput = dialog.querySelector("#tracePasscodeInput");
+      const confirmInput = dialog.querySelector("#tracePasscodeConfirmInput");
+      const errorEl = dialog.querySelector("#tracePasscodeError");
+
+      const finish = (value) => {
+        closeTracePasscodeDialog(dialog, onKeydown);
+        resolve(value);
+      };
+
+      const submit = () => {
+        const passcode = passcodeInput.value || "";
+        if (isExport) {
+          const validationError = validateTracePasscode(passcode);
+          if (validationError) {
+            errorEl.textContent = validationError;
+            passcodeInput.focus();
+            return;
+          }
+          if (passcode !== (confirmInput.value || "")) {
+            errorEl.textContent = "Passcodes do not match.";
+            confirmInput.focus();
+            return;
+          }
+        } else if (!passcode) {
+          errorEl.textContent = "Enter the trace passcode.";
+          passcodeInput.focus();
+          return;
+        }
+        finish(passcode);
+      };
+
+      const onKeydown = (event) => {
+        if (event.key === "Escape") finish(null);
+        if (event.key === "Enter") {
+          event.preventDefault();
+          submit();
+        }
+      };
+
+      dialog.addEventListener("click", (event) => {
+        const toggleBtn = event.target.closest('[data-action="toggle-passcode"]');
+        if (toggleBtn) {
+          event.preventDefault();
+          event.stopPropagation();
+          const input = dialog.querySelector("#" + toggleBtn.dataset.target);
+          if (!input) return;
+          const willShow = input.type === "password";
+          input.type = willShow ? "text" : "password";
+          toggleBtn.innerHTML = willShow ? traceEyeOffIcon : traceEyeIcon;
+          toggleBtn.title = willShow ? "Hide passcode" : "Show passcode";
+          toggleBtn.setAttribute("aria-label", toggleBtn.title);
+          toggleBtn.setAttribute("aria-pressed", willShow ? "true" : "false");
+          input.focus();
+          return;
+        }
+        if (event.target === dialog || event.target.closest('[data-action="cancel"]')) {
+          finish(null);
+        }
+        if (event.target.closest('[data-action="submit"]')) {
+          submit();
+        }
+      });
+      document.addEventListener("keydown", onKeydown);
+      setTimeout(() => passcodeInput.focus(), 0);
+    });
+  }
+
+  async function requestTraceExportPasscode() {
+    return openTracePasscodeDialog({ mode: "export" });
+  }
+
+  async function requestTraceImportPasscode(fileName) {
+    return openTracePasscodeDialog({ mode: "import", fileName });
+  }
+
+  async function deriveTraceEncryptionKey(passcode, saltBytes, iterations) {
+    const keyMaterial = await root.crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(passcode),
+      "PBKDF2",
+      false,
+      ["deriveKey"],
+    );
+    return root.crypto.subtle.deriveKey(
+      {
+        name: "PBKDF2",
+        hash: "SHA-256",
+        salt: saltBytes,
+        iterations,
+      },
+      keyMaterial,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt", "decrypt"],
+    );
+  }
+
+  function isEncryptedTracePayload(payload) {
+    return !!(
+      payload &&
+      typeof payload === "object" &&
+      payload.format === TRACE_ENCRYPTION_FORMAT &&
+      payload.version === TRACE_ENCRYPTION_VERSION &&
+      payload.ciphertext
+    );
+  }
+
+  async function encryptTracePayload(tracePayload, passcode, metadata = {}) {
+    if (!hasWebCrypto()) {
+      throw new Error("This browser does not support Web Crypto encryption.");
+    }
+    const salt = new Uint8Array(16);
+    const iv = new Uint8Array(12);
+    root.crypto.getRandomValues(salt);
+    root.crypto.getRandomValues(iv);
+    const key = await deriveTraceEncryptionKey(passcode, salt, TRACE_KDF_ITERATIONS);
+    const plaintext = new TextEncoder().encode(JSON.stringify(tracePayload));
+    const encrypted = await root.crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plaintext);
+    return {
+      format: TRACE_ENCRYPTION_FORMAT,
+      version: TRACE_ENCRYPTION_VERSION,
+      algorithm: "AES-GCM",
+      kdf: "PBKDF2-SHA-256",
+      iterations: TRACE_KDF_ITERATIONS,
+      salt: bytesToBase64(salt),
+      iv: bytesToBase64(iv),
+      createdAt: new Date().toISOString(),
+      metadata,
+      ciphertext: bytesToBase64(new Uint8Array(encrypted)),
+    };
+  }
+
+  async function decryptTracePayload(encryptedPayload, passcode) {
+    if (!hasWebCrypto()) {
+      throw new Error("This browser does not support Web Crypto decryption.");
+    }
+    if (!isEncryptedTracePayload(encryptedPayload)) {
+      throw new Error("Unsupported encrypted trace format.");
+    }
+    const iterations = Number(encryptedPayload.iterations);
+    if (!Number.isFinite(iterations) || iterations < 100000) {
+      throw new Error("Invalid encrypted trace key settings.");
+    }
+    const salt = base64ToBytes(encryptedPayload.salt);
+    const iv = base64ToBytes(encryptedPayload.iv);
+    const ciphertext = base64ToBytes(encryptedPayload.ciphertext);
+    const key = await deriveTraceEncryptionKey(passcode, salt, iterations);
+    let plaintext;
+    try {
+      plaintext = await root.crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+    } catch (_) {
+      throw new Error("Incorrect passcode or damaged encrypted trace file.");
+    }
+    return JSON.parse(new TextDecoder().decode(plaintext));
+  }
+
+  async function decodeImportedTracePayload(payload, fileName) {
+    if (!isEncryptedTracePayload(payload)) return payload;
+    const passcode = await requestTraceImportPasscode(fileName);
+    if (passcode === null) throw new Error("Import cancelled.");
+    return decryptTracePayload(payload, passcode);
+  }
+
+  function isProductionEnvironment(environment) {
+    if (!environment) return false;
+    const envText = [
+      environment.key,
+      environment.label,
+      environment.msBase,
+      environment.consoleBase,
+    ].filter(Boolean).join(" ").toLowerCase();
+    return envText.includes("prd") || envText.includes("prod");
+  }
+
+  function confirmProductionTraceExport(environment) {
+    if (!isProductionEnvironment(environment)) return true;
+    const envName = environment.label || environment.key || "selected environment";
+    return window.confirm(
+      `Warning: ${envName} looks like a PRD/PROD environment.\n\n` +
+      "Exported trace JSON may contain sensitive production data such as customer, application, payload, decision, or operational details.\n\n" +
+      "Do not share this file outside an approved secure channel. Continue exporting?"
+    );
+  }
 
   const toolbarIcons = {
     environment: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-4-4m4 4 4-4M5 17v3h14v-3"/></svg>',
@@ -942,18 +1227,19 @@
           window.updatePageTitle();
         }
         const reader = new FileReader();
-        reader.onload = (evt) => {
+        reader.onload = async (evt) => {
           try {
             const json = JSON.parse(evt.target.result);
+            const tracePayload = await decodeImportedTracePayload(json, file.name);
             // Imported data is a static snapshot — no forward pagination.
             st.allDirectItems = [];
             st.directTotal = null;
             st.hasMorePages = false;
             st.loadAllMode = false;
-            loadGraph(L().normalizeResponse(json).items);
+            loadGraph(L().normalizeResponse(tracePayload).items);
             renderPaginationControls();
           } catch (err) {
-            window.alert("Invalid JSON file: " + err.message);
+            window.alert("Unable to import trace JSON: " + err.message);
           }
         };
         reader.readAsText(file);
@@ -2770,19 +3056,28 @@
     if (!st.graph || activeAutoFetches > 0 || requestQueue.length > 0) return;
 
     const exportBtn = document.getElementById("liveExport");
+    const selectedEnv = curEnv();
+    if (!confirmProductionTraceExport(selectedEnv)) return;
+    const encryptExport = isProductionEnvironment(selectedEnv);
+    const exportPasscode = encryptExport ? await requestTraceExportPasscode() : null;
+    if (encryptExport && exportPasscode === null) return;
+
     const primaryTag = collectTagFilter();
     const workflowRequestId = document.getElementById("liveWorkflowRequestId")?.value || "";
     const workflowName = document.getElementById("liveWorkflowName")?.value || "";
-    const fileName = L().buildTraceExportFileName(
+    const baseFileName = L().buildTraceExportFileName(
       (primaryTag.key && primaryTag.value) ? primaryTag.key : (workflowRequestId ? "workflowRequestId" : "workflowName"),
       primaryTag.value || workflowRequestId || workflowName,
       st.lastAppId || st.selected,
     );
+    const fileName = encryptExport
+      ? baseFileName.replace(/\.json$/i, "_encrypted.json")
+      : baseFileName;
     let objectUrl = null;
 
     if (exportBtn) exportBtn.disabled = true;
-    showLoadingOverlay("Preparing trace data for download...", {
-      title: "Exporting Trace JSON",
+    showLoadingOverlay(encryptExport ? "Encrypting trace data for download..." : "Preparing trace data for download...", {
+      title: encryptExport ? "Exporting Encrypted Trace JSON" : "Exporting Trace JSON",
       stoppable: false
     });
 
@@ -2792,7 +3087,13 @@
         schedule(() => setTimeout(resolve, 0));
       });
 
-      const json = JSON.stringify(st.graph.nodes, null, 2);
+      const exportPayload = encryptExport
+        ? await encryptTracePayload(st.graph.nodes, exportPasscode, {
+            environment: selectedEnv ? { key: selectedEnv.key, label: selectedEnv.label } : null,
+            processCount: st.graph.nodes.length,
+          })
+        : st.graph.nodes;
+      const json = JSON.stringify(exportPayload, null, 2);
       const blob = new Blob([json], { type: "application/json;charset=utf-8" });
       objectUrl = URL.createObjectURL(blob);
 
