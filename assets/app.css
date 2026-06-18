@@ -1358,6 +1358,32 @@ body.diagram-panning {
   fill: #c2e4dd;
 }
 
+.node-db-cyl-body.indirect {
+  fill: #e0e7ff;
+  stroke: #4f46e5;
+}
+
+.node-db-cyl-top.indirect {
+  fill: #c7d2fe;
+  stroke: #4f46e5;
+}
+
+.node-db-cyl-band.indirect {
+  stroke: #4f46e5;
+}
+
+.node-db-icon-group:hover .node-db-cyl-body.indirect {
+  fill: #c7d2fe;
+}
+
+.node-db-jump-arrow {
+  stroke: #4f46e5;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
 .node-db-list {
   font-size: 10px;
   font-weight: 600;

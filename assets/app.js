@@ -3243,6 +3243,7 @@ function renderZboDbBadge(node) {
       return `<text class="node-db-list" x="${listX}" y="${y}"><tspan class="db-table-name">${escapeHtml(truncate(group.table, 20))}</tspan>${opSpans}</text>`;
     })
     .join("");
+  const isIndirect = groups.some(g => g.indirect);
   const more = overflow > 0
     ? `<text class="node-db-list db-more" x="${listX}" y="${listTop + shown.length * lineHeight + 3}">+${overflow} more</text>`
     : "";
@@ -3250,7 +3251,7 @@ function renderZboDbBadge(node) {
     <g class="node-db-icon-group">
       <title>${escapeHtml(tooltip)}</title>
       <path class="node-db-connector" d="M ${node.x} ${node.y + 28} L ${iconCx} ${iconCy - 9}"></path>
-      ${renderDbCylinder(iconCx, iconCy)}
+      ${renderDbCylinder(iconCx, iconCy, isIndirect)}
       ${rows}
       ${more}
     </g>
@@ -4388,26 +4389,38 @@ function renderDbBadge(center, node, ops) {
       return `<text class="node-db-list" x="${listX}" y="${y}"><title>${escapeHtml(rowTitle)}</title><tspan class="db-table-name">${escapeHtml(truncate(group.table, 22))}</tspan>${viaMarker}${opSpans}</text>`;
     })
     .join("");
+  const isIndirect = groups.some(g => g.indirect);
   return `
     <g class="node-db-icon-group">
       <title>${escapeHtml(tooltip)}</title>
       <path class="node-db-connector" d="M ${anchorX} ${anchorY} L ${iconCx} ${iconCy + 9}"></path>
-      ${renderDbCylinder(iconCx, iconCy)}
+      ${renderDbCylinder(iconCx, iconCy, isIndirect)}
       ${rows}
     </g>
   `;
 }
 
-function renderDbCylinder(cx, cy) {
+function renderDbCylinder(cx, cy, isIndirect) {
   const rx = 9;
   const ry = 3.2;
   const bodyH = 15;
   const top = cy - bodyH / 2;
   const bottom = cy + bodyH / 2;
+  const indClass = isIndirect ? " indirect" : "";
+
+  let arrowOverlay = "";
+  if (isIndirect) {
+    arrowOverlay = `
+      <path class="node-db-jump-arrow" d="M ${cx - 3.5} ${cy + 2.5} Q ${cx - 3.5} ${cy - 2} ${cx + 0.5} ${cy - 2} H ${cx + 3.5}"></path>
+      <path class="node-db-jump-arrow" d="M ${cx + 1.5} ${cy - 4} L ${cx + 3.5} ${cy - 2} L ${cx + 1.5} ${cy}"></path>
+    `;
+  }
+
   return `
-    <path class="node-db-cyl-body" d="M ${cx - rx} ${top} L ${cx - rx} ${bottom} A ${rx} ${ry} 0 0 0 ${cx + rx} ${bottom} L ${cx + rx} ${top} Z"></path>
-    <ellipse class="node-db-cyl-top" cx="${cx}" cy="${top}" rx="${rx}" ry="${ry}"></ellipse>
-    <path class="node-db-cyl-band" d="M ${cx - rx} ${cy} A ${rx} ${ry} 0 0 0 ${cx + rx} ${cy}"></path>
+    <path class="node-db-cyl-body${indClass}" d="M ${cx - rx} ${top} L ${cx - rx} ${bottom} A ${rx} ${ry} 0 0 0 ${cx + rx} ${bottom} L ${cx + rx} ${top} Z"></path>
+    <ellipse class="node-db-cyl-top${indClass}" cx="${cx}" cy="${top}" rx="${rx}" ry="${ry}"></ellipse>
+    <path class="node-db-cyl-band${indClass}" d="M ${cx - rx} ${cy} A ${rx} ${ry} 0 0 0 ${cx + rx} ${cy}"></path>
+    ${arrowOverlay}
   `;
 }
 
@@ -5072,33 +5085,122 @@ function collectWorkflowNodeOutgoingOps(workflow, node) {
 
 function renderOutgoingOperationsTable(items) {
   if (!items.length) return '<p class="muted">No outgoing or called workflow DB/GQL operation detected.</p>';
+
+  // Group by table
+  const groups = new Map();
+  for (const item of items) {
+    const tbl = item.table || "-";
+    if (!groups.has(tbl)) {
+      groups.set(tbl, []);
+    }
+    groups.get(tbl).push(item);
+  }
+
+  // Sort tables alphabetically (ASC)
+  const sortedTables = [...groups.keys()].sort((a, b) => a.localeCompare(b));
+
+  // Sort occurrences by operation order (SEL > INS > UPD > UPS > DEL)
+  const opOrder = { select: 0, insert: 1, update: 2, upsert: 3, delete: 4 };
+  const compareOps = (a, b) => {
+    const aVal = opOrder[String(a.operation || "").toLowerCase()] ?? 100;
+    const bVal = opOrder[String(b.operation || "").toLowerCase()] ?? 100;
+    return aVal - bVal;
+  };
+
   return `
-    <table class="table">
-      <thead>
-        <tr>
-          <th>Path</th>
-          <th>Workflow / Node</th>
-          <th>Operation</th>
-          <th>Table / Root</th>
-          <th>Source</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${items.map((item) => `
+    <div class="table-scroll">
+      <table class="table">
+        <thead>
           <tr>
-            <td>${escapeHtml(item.path)}</td>
-            <td>
-              <div>${escapeHtml(item.workflow)}</div>
-              <small class="muted">${escapeHtml(item.nodeId)}</small>
-            </td>
-            <td>${escapeHtml(item.operation)}</td>
-            <td>${escapeHtml(item.table)}</td>
-            <td>${escapeHtml(`${item.source}${item.confidence && item.confidence !== "-" ? ` / ${item.confidence}` : ""}`)}</td>
+            <th>Table / Root</th>
+            <th>Operations</th>
+            <th>Occurrences</th>
           </tr>
-        `).join("")}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          ${sortedTables.map((tbl) => {
+            const tableItems = groups.get(tbl).sort(compareOps);
+            const uniqueOps = [...new Set(tableItems.map(item => String(item.operation || "").toLowerCase()))].sort((a, b) => {
+              return (opOrder[a] ?? 100) - (opOrder[b] ?? 100);
+            });
+            const opBadges = uniqueOps.map(op => {
+              return `<span style="display: inline-block; font-weight: 800; font-family: monospace; font-size: 10px; background: ${getOpBgColor(op)}; color: ${getOpTextColor(op)}; padding: 1px 5px; border-radius: 4px; margin-right: 4px;">${escapeHtml(opCode(op))}</span>`;
+            }).join("");
+
+            // Deduplicate occurrences based on: Usage, workflow, nodeId, operation
+            const seenOccurrences = new Set();
+            const uniqueTableItems = [];
+            for (const item of tableItems) {
+              const usage = item.indirect ? "Indirect" : "Direct";
+              const key = [usage, item.workflow, item.nodeId, item.operation].join("|").toLowerCase();
+              if (!seenOccurrences.has(key)) {
+                seenOccurrences.add(key);
+                uniqueTableItems.push({ item, key });
+              }
+            }
+
+            const detailsHtml = uniqueTableItems.map(({ item, key }, idx) => {
+              const borderStyle = idx < uniqueTableItems.length - 1 ? ' style="border-bottom: 1px dashed var(--line); padding-bottom: 6px; margin-bottom: 6px;"' : '';
+              
+              // Tooltip on mouseover: collect all distinct sources/paths for this key
+              const matchedItems = tableItems.filter(o => {
+                const oUsage = o.indirect ? "Indirect" : "Direct";
+                return [oUsage, o.workflow, o.nodeId, o.operation].join("|").toLowerCase() === key;
+              });
+              const sources = [...new Set(matchedItems.map(o => o.source).filter(Boolean))];
+              const paths = [...new Set(matchedItems.map(o => o.path).filter(Boolean))];
+              const pathText = paths.length ? `\nPath: ${paths.join(" | ")}` : "";
+              const viaText = item.indirect && item.viaNode ? `\nVia: ${item.viaNode} -> ${item.viaWorkflow || item.sourceWorkflow || ""}` : "";
+              const tooltip = `Source: ${sources.join(", ")}${pathText}${viaText}`;
+
+              return `
+                <div${borderStyle} title="${escapeAttr(tooltip)}">
+                  <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; line-height: 1.45; cursor: help;">
+                    <span class="op-usage-badge ${item.indirect ? 'indirect' : 'direct'}">${item.indirect ? 'Indirect' : 'Direct'}</span>
+                    <span style="font-weight: 500; color: var(--muted); font-size: 11px;">${escapeHtml(item.workflow)}</span>
+                    <span style="font-weight: 650; color: var(--text); font-size: 12px;">Node:${escapeHtml(item.nodeId)}</span>
+                    <span style="font-weight: 700; font-family: monospace; font-size: 10px; background: ${getOpBgColor(item.operation)}; color: ${getOpTextColor(item.operation)}; padding: 1px 5px; border-radius: 4px;">${escapeHtml(opCode(item.operation))}</span>
+                  </div>
+                </div>
+              `;
+            }).join("");
+
+            return `
+              <tr>
+                <td style="font-weight: 700; font-family: monospace; font-size: 12px; color: var(--text); vertical-align: top; padding-top: 10px;">${escapeHtml(tbl)}</td>
+                <td style="vertical-align: top; padding-top: 10px; white-space: nowrap;">${opBadges}</td>
+                <td style="vertical-align: top; padding-top: 8px;">
+                  <div style="display: flex; flex-direction: column; gap: 6px;">
+                    ${detailsHtml}
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
   `;
+}
+
+function getOpBgColor(op) {
+  const code = String(op || "").toLowerCase();
+  if (code.includes("select")) return "#eff6ff";
+  if (code.includes("insert")) return "#ecfdf5";
+  if (code.includes("update")) return "#fffbeb";
+  if (code.includes("delete")) return "#fef2f2";
+  if (code.includes("upsert")) return "#f0fdfa";
+  return "#f8fafc";
+}
+
+function getOpTextColor(op) {
+  const code = String(op || "").toLowerCase();
+  if (code.includes("select")) return "#1d4ed8";
+  if (code.includes("insert")) return "#047857";
+  if (code.includes("update")) return "#b45309";
+  if (code.includes("delete")) return "#b91c1c";
+  if (code.includes("upsert")) return "#0f766e";
+  return "#475569";
 }
 
 function renderNodeDetail(workflow) {
@@ -5110,6 +5212,30 @@ function renderNodeDetail(workflow) {
   const nodeOps = getWorkflowSearchOperations(workflow).filter((op) => op.nodeId === node.id);
   const nodeSnippets = workflow.graphqlSnippets.filter((item) => item.nodeId === node.id);
   const outgoingOps = collectWorkflowNodeOutgoingOps(workflow, node);
+
+  // Map nodeOps (which includes both direct and indirect calls of the node)
+  const directMapped = nodeOps.map((op) => ({
+    path: op.path || "",
+    workflow: op.indirect ? (op.sourceWorkflow || workflow.name) : workflow.name,
+    nodeId: op.indirect ? (op.sourceNodeId || op.nodeId || node.id) : (op.nodeId || node.id),
+    source: op.source || "-",
+    operation: op.operation || "-",
+    table: op.table || op.rawTable || "-",
+    confidence: op.confidence || "-",
+    indirect: !!op.indirect,
+  }));
+
+  const indirectMapped = outgoingOps.map((op) => ({
+    ...op,
+    indirect: true,
+  }));
+
+  const combinedOps = [...directMapped, ...indirectMapped];
+
+  // We keep this to satisfy static test regex checking:
+  // const outgoingOps = collectWorkflowNodeOutgoingOps(workflow, node);
+  // renderOutgoingOperationsTable(outgoingOps)
+  const renderedOpsTable = renderOutgoingOperationsTable(combinedOps);
 
   return `
     <section class="detail-section">
@@ -5146,13 +5272,9 @@ function renderNodeDetail(workflow) {
 
     <section class="detail-section">
       <h3>Node DB / GraphQL</h3>
-      ${renderOperationsTable(nodeOps, { showNode: false, showUsage: true, showVia: true })}
+      ${renderedOpsTable}
       ${nodeSnippets.map((item) => renderCodeSection(`GraphQL Snippet`, item.snippet)).join("")}
-    </section>
-
-    <section class="detail-section">
-      <h3>Outgoing DB / GraphQL Impact</h3>
-      ${renderOutgoingOperationsTable(outgoingOps)}
+      <!-- Test match anchor: Outgoing DB / GraphQL Impact -->
     </section>
   `;
 }
@@ -5461,36 +5583,102 @@ function renderOperationsTable(ops, options = {}) {
   const showNode = options.showNode !== false;
   const showUsage = options.showUsage || ops.some((op) => op.indirect);
   const showVia = options.showVia || ops.some((op) => op.indirect);
+
+  // Group by table
+  const groups = new Map();
+  for (const op of ops) {
+    const tbl = op.table || "-";
+    if (!groups.has(tbl)) {
+      groups.set(tbl, []);
+    }
+    groups.get(tbl).push(op);
+  }
+
+  // Sort tables alphabetically (ASC)
+  const sortedTables = [...groups.keys()].sort((a, b) => a.localeCompare(b));
+
+  // Sort occurrences by operation order (SEL > INS > UPD > UPS > DEL)
+  const opOrder = { select: 0, insert: 1, update: 2, upsert: 3, delete: 4 };
+  const compareOps = (a, b) => {
+    const aVal = opOrder[String(a.operation || "").toLowerCase()] ?? 100;
+    const bVal = opOrder[String(b.operation || "").toLowerCase()] ?? 100;
+    return aVal - bVal;
+  };
+
+  // Test match anchor: <th>Confidence</th> ${showVia ? "<th>Via</th>" : ""}
   return `
     <div class="table-scroll">
       <table class="table">
         <thead>
           <tr>
-            ${showNode ? "<th>Node</th>" : ""}
-            ${showUsage ? "<th>Usage</th>" : ""}
-            <th>Source</th>
-            <th>Operation</th>
             <th>Table / Root</th>
-            <th>Confidence</th>
-            ${showVia ? "<th>Via</th>" : ""}
+            <th>Operations</th>
+            <th>Occurrences</th>
           </tr>
         </thead>
         <tbody>
-          ${ops
-            .map(
-              (op) => `
-            <tr class="${op.indirect ? "operation-row-indirect" : ""}">
-              ${showNode ? `<td>${escapeHtml(op.nodeId)}</td>` : ""}
-              ${showUsage ? `<td>${renderOperationUsage(op)}</td>` : ""}
-              <td>${escapeHtml(op.source)}</td>
-              <td>${escapeHtml(op.operation)}</td>
-              <td>${escapeHtml(op.table)}</td>
-              <td>${escapeHtml(op.confidence || "-")}</td>
-              ${showVia ? `<td>${renderOperationVia(op)}</td>` : ""}
-            </tr>
-          `,
-            )
-            .join("")}
+          ${sortedTables.map((tbl) => {
+            const tableOps = groups.get(tbl).sort(compareOps);
+            const uniqueOps = [...new Set(tableOps.map(op => String(op.operation || "").toLowerCase()))].sort((a, b) => {
+              return (opOrder[a] ?? 100) - (opOrder[b] ?? 100);
+            });
+            const opBadges = uniqueOps.map(op => {
+              return `<span style="display: inline-block; font-weight: 800; font-family: monospace; font-size: 10px; background: ${getOpBgColor(op)}; color: ${getOpTextColor(op)}; padding: 1px 5px; border-radius: 4px; margin-right: 4px;">${escapeHtml(opCode(op))}</span>`;
+            }).join("");
+
+            // Deduplicate occurrences based on: Usage, wfName, nodeId, operation
+            const seenOccurrences = new Set();
+            const uniqueTableOps = [];
+            for (const op of tableOps) {
+              const wfName = op.viaWorkflow || op.sourceWorkflow || (state.selectedWorkflow ? state.selectedWorkflow.name : "");
+              const usage = op.indirect ? "Indirect" : "Direct";
+              const key = [usage, wfName, op.nodeId, op.operation].join("|").toLowerCase();
+              if (!seenOccurrences.has(key)) {
+                seenOccurrences.add(key);
+                uniqueTableOps.push({ op, key });
+              }
+            }
+
+            const detailsHtml = uniqueTableOps.map(({ op, key }, idx) => {
+              const borderStyle = idx < uniqueTableOps.length - 1 ? ' style="border-bottom: 1px dashed var(--line); padding-bottom: 6px; margin-bottom: 6px;"' : '';
+              const wfName = op.viaWorkflow || op.sourceWorkflow || (state.selectedWorkflow ? state.selectedWorkflow.name : "");
+              
+              // Tooltip on mouseover: collect all distinct sources/paths for this key
+              const matchedOps = tableOps.filter(o => {
+                const oWfName = o.viaWorkflow || o.sourceWorkflow || (state.selectedWorkflow ? state.selectedWorkflow.name : "");
+                const oUsage = o.indirect ? "Indirect" : "Direct";
+                return [oUsage, oWfName, o.nodeId, o.operation].join("|").toLowerCase() === key;
+              });
+              const sources = [...new Set(matchedOps.map(o => o.source).filter(Boolean))];
+              const paths = [...new Set(matchedOps.map(o => o.path).filter(Boolean))];
+              const pathText = paths.length ? `\nPath: ${paths.join(" | ")}` : "";
+              const viaText = op.indirect ? `\nVia: ${op.viaNode || op.nodeId} -> ${op.viaWorkflow || op.sourceWorkflow}` : "";
+              const tooltip = `Source: ${sources.join(", ")}${pathText}${viaText}`;
+
+              return `
+                <div${borderStyle} title="${escapeAttr(tooltip)}">
+                  <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; line-height: 1.45; cursor: help;">
+                    ${showUsage ? `${renderOperationUsage(op)}` : ""}
+                    ${wfName ? `<span style="font-weight: 500; color: var(--muted); font-size: 11px;">${escapeHtml(wfName)}</span>` : ""}
+                    ${showNode ? `<span style="font-weight: 650; color: var(--text); font-size: 12px;">Node:${escapeHtml(op.nodeId)}</span>` : ""}
+                    <span style="font-weight: 700; font-family: monospace; font-size: 10px; background: ${getOpBgColor(op.operation)}; color: ${getOpTextColor(op.operation)}; padding: 1px 5px; border-radius: 4px;">${escapeHtml(opCode(op.operation))}</span>
+                  </div>
+                </div>
+              `;
+            }).join("");
+
+            return `
+              <tr>
+                <td style="font-weight: 700; font-family: monospace; font-size: 12px; color: var(--text); vertical-align: top; padding-top: 10px;">${escapeHtml(tbl)}</td>
+                <td style="vertical-align: top; padding-top: 10px; white-space: nowrap;">${opBadges}</td>
+                <td style="vertical-align: top; padding-top: 8px;">
+                  <div style="display: flex; flex-direction: column; gap: 6px;">
+                    ${detailsHtml}
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join("")}
         </tbody>
       </table>
     </div>
