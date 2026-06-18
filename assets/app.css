@@ -846,6 +846,176 @@ body.diagram-panning {
   min-height: 100%;
 }
 
+.diagram-selectable,
+.diagram-selectable * {
+  user-select: text;
+}
+
+.diagram-code-panel {
+  position: relative;
+  width: max-content;
+  min-width: 100%;
+  min-height: 100%;
+  background: #0f172a;
+}
+
+.diagram-copy-btn {
+  position: sticky;
+  top: 12px;
+  float: right;
+  z-index: 2;
+  min-width: 64px;
+  min-height: 30px;
+  margin: 12px 14px 0 0;
+  border: 1px solid rgba(203, 213, 225, 0.35);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #e6edf5;
+  font-size: 12px;
+}
+
+.diagram-code-block {
+  width: max-content;
+  min-width: 100%;
+  max-height: none;
+  min-height: 100%;
+  margin: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: #0f172a;
+  color: #e6edf5;
+  padding: 22px 26px;
+  white-space: pre;
+  word-break: normal;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.sql-keyword {
+  color: #7dd3fc;
+  font-weight: 750;
+}
+
+.sql-string {
+  color: #86efac;
+}
+
+.sql-number {
+  color: #fbbf24;
+}
+
+.sql-comment {
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.enum-diagram-table {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 100%;
+  background: var(--surface);
+}
+
+.enum-table-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+#enumTableFilter {
+  flex: 1;
+  min-width: 180px;
+  height: 34px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 0 10px;
+}
+
+.enum-pagination {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.enum-pagination button {
+  min-width: 34px;
+  min-height: 30px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.enum-pagination button:disabled {
+  opacity: 0.45;
+}
+
+.enum-table-scroll {
+  min-height: 0;
+  overflow: auto;
+}
+
+.enum-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.enum-data-table th,
+.enum-data-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.enum-data-table .enum-row-number {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  width: 54px;
+  min-width: 54px;
+  background: #f8fafc;
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.enum-data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f8fafc;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.enum-data-table th.enum-row-number {
+  z-index: 2;
+}
+
+.enum-data-table th button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  padding: 0;
+  text-align: left;
+}
+
 .empty-state {
   display: grid;
   height: 100%;

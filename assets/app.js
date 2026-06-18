@@ -18,6 +18,9 @@ const state = {
   selectedTable: null,
   selectedEnum: null,
   selectedFunction: null,
+  enumTableFilter: "",
+  enumTableSort: { field: "", direction: "asc" },
+  enumTablePage: 1,
   erCheckedTables: new Set((index?.db?.tables || []).filter(t => t.name.startsWith("appl_")).map(t => t.name)),
   query: "",
   searchMode: "contains",
@@ -1182,7 +1185,11 @@ function initDiagramPan() {
 }
 
 function isInteractiveDiagramTarget(target) {
-  if (target?.closest?.(".trace-viewer") || target?.closest?.(".code-block")) {
+  if (
+    target?.closest?.(
+      ".trace-viewer, .code-block, .diagram-selectable, .diagram-code-panel, .enum-diagram-table, button, input, textarea, select, a",
+    )
+  ) {
     return true;
   }
   // Panning should only be blocked if node dragging is enabled and the target is a node
@@ -6577,6 +6584,15 @@ function renderKv(label, value) {
   `;
 }
 
+function renderKvHtml(label, html) {
+  return `
+    <div class="kv">
+      <span>${escapeHtml(label)}</span>
+      <span>${html || "-"}</span>
+    </div>
+  `;
+}
+
 function renderCodeSection(title, code) {
   return `
     <section class="detail-section">
@@ -6601,6 +6617,13 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
   return escapeHtml(value);
+}
+
+function escapeCodeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }
 
 // Escape code, then wrap case-insensitive occurrences of the query in <mark>.
@@ -6639,8 +6662,8 @@ function selectDatabaseDefaultItem(options = {}) {
     }
     const preferred = state.selectedTrigger || allTriggers[0];
     if (preferred) {
-      selectTable(preferred.tableName, options);
       state.selectedTrigger = preferred;
+      selectTable(preferred.tableName, options);
     }
   }
 }
@@ -6690,6 +6713,9 @@ function selectEnum(name, options = {}) {
   state.selectedEnum = en;
   state.selectedTable = null;
   state.selectedFunction = null;
+  state.enumTableFilter = "";
+  state.enumTableSort = { field: "", direction: "asc" };
+  state.enumTablePage = 1;
   state.activeTab = "overview";
   
   els.workflowTitle.textContent = `Enum: ${en.name}`;
@@ -6976,8 +7002,8 @@ function renderDatabaseResults() {
 
     els.resultsList.querySelectorAll("[data-trigger-name]").forEach(btn => {
       btn.addEventListener("click", () => {
-        selectTable(btn.dataset.triggerTable);
         state.selectedTrigger = { name: btn.dataset.triggerName, tableName: btn.dataset.triggerTable };
+        selectTable(btn.dataset.triggerTable);
         renderDatabaseResults();
       });
     });
@@ -7189,11 +7215,55 @@ function renderTableCrudMap(table) {
   }
 
   callers.sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name));
+  const crudOperationOrder = ["select", "insert", "update", "upsert", "delete"];
+  const crudOperationRank = (op) => {
+    const index = crudOperationOrder.indexOf(normalizeOperation(op));
+    return index >= 0 ? index : crudOperationOrder.length;
+  };
+  const renderCrudCallerLink = (c, options = {}) => {
+    const fontSize = options.small ? "font-size: 11px;" : "";
+    if (c.type === "workflow") {
+      const nodeText = c.nodeId && !options.compact ? ` (Node: ${escapeHtml(c.nodeId)})` : "";
+      return `<a href="${escapeAttr(makeWorkflowUrl(c.name))}" target="_blank" class="workflow-link" style="${fontSize}">${escapeHtml(c.name)}${nodeText}</a>`;
+    }
+    if (c.type === "db-function") {
+      return `<a href="#" data-func-link="${escapeAttr(c.name)}" class="workflow-link" style="${fontSize}">${escapeHtml(c.name)} (Func)</a>`;
+    }
+    if (c.type === "db-trigger") {
+      return `<span style="${fontSize} font-weight:600; color:var(--text-strong);">${escapeHtml(c.name)} (Trigger &rarr; <a href="#" data-func-link="${escapeAttr(c.triggerFunction.replace(/\(\)$/, ""))}" class="workflow-link">${escapeHtml(c.triggerFunction)}</a>)</span>`;
+    }
+    const zboText = c.type === "zbo-action" ? `Act: ${escapeHtml(c.actionLabel)}` : `GQL${c.nodeId && !options.compact ? `: ${escapeHtml(c.nodeId)}` : ""}`;
+    return `<a href="${escapeAttr(makeZboUrl(c.name))}" target="_blank" class="workflow-link" style="${fontSize}">${escapeHtml(c.name)} (${zboText})</a>`;
+  };
+  const renderCrudOpBadge = (operation) => {
+    const op = normalizeOperation(operation);
+    return `<span class="db-op op-${escapeAttr(op)}" style="padding: 1px 6px; font-size: 10px; line-height: 1.2; min-height: 0; margin-right: 8px; vertical-align: middle; display: inline-block; width: 50px; text-align: center;">${escapeHtml(capitalizeWord(op))}</span>`;
+  };
+  const renderCrudOpCallerRows = (items) => {
+    const opGroups = {};
+    for (const c of items) {
+      const op = normalizeOperation(c.operation);
+      if (!opGroups[op]) opGroups[op] = [];
+      opGroups[op].push(c);
+    }
+    return Object.entries(opGroups)
+      .sort(([left], [right]) => crudOperationRank(left) - crudOperationRank(right) || left.localeCompare(right))
+      .map(([op, list]) => {
+        const links = list.map(c => renderCrudCallerLink(c, { small: true, compact: true })).join(", ");
+        return `
+          <div style="margin-bottom: 6px; display: flex; align-items: flex-start; gap: 4px;">
+            <div style="flex-shrink: 0;">${renderCrudOpBadge(op)}</div>
+            <div style="flex: 1; font-size: 11px; line-height: 1.4;">${links}</div>
+          </div>
+        `;
+      }).join("");
+  };
 
   const tabSelector = `
     <div class="crud-tabs" style="display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid var(--line); padding-bottom: 8px;">
       <button id="btnCrudByCaller" class="match-filter-chip ${state.crudView === "caller" ? "active" : ""}" type="button" style="min-height: 28px; padding: 0 12px; font-size: 11px;">By Caller</button>
       <button id="btnCrudByColumn" class="match-filter-chip ${state.crudView === "column" ? "active" : ""}" type="button" style="min-height: 28px; padding: 0 12px; font-size: 11px;">By Column</button>
+      <button id="btnCrudByOperation" class="match-filter-chip ${state.crudView === "operation" ? "active" : ""}" type="button" style="min-height: 28px; padding: 0 12px; font-size: 11px;">By Operation</button>
     </div>
   `;
 
@@ -7217,33 +7287,7 @@ function renderTableCrudMap(table) {
       if (colCallers.length === 0) {
         callersListHtml = `<span class="muted" style="font-size: 11px;">No callers touch this column directly.</span>`;
       } else {
-        const opGroups = {};
-        for (const c of colCallers) {
-          const op = normalizeOperation(c.operation);
-          if (!opGroups[op]) opGroups[op] = [];
-          opGroups[op].push(c);
-        }
-        
-        callersListHtml = Object.entries(opGroups).map(([op, list]) => {
-          const opBadge = `<span class="db-op op-${escapeAttr(op)}" style="padding: 1px 6px; font-size: 10px; line-height: 1.2; min-height: 0; margin-right: 8px; vertical-align: middle; display: inline-block; width: 50px; text-align: center;">${escapeHtml(capitalizeWord(op))}</span>`;
-          const links = list.map(c => {
-            if (c.type === "workflow") {
-              return `<a href="${escapeAttr(makeWorkflowUrl(c.name))}" target="_blank" class="workflow-link" style="font-size: 11px;">${escapeHtml(c.name)}</a>`;
-            } else if (c.type === "db-function") {
-              return `<a href="#" data-func-link="${escapeAttr(c.name)}" class="workflow-link" style="font-size: 11px;">${escapeHtml(c.name)} (Func)</a>`;
-            } else if (c.type === "db-trigger") {
-              return `<span style="font-size: 11px; font-weight:600; color:var(--text-strong);">${escapeHtml(c.name)} (Trigger &rarr; <a href="#" data-func-link="${escapeAttr(c.triggerFunction.replace(/\(\)$/, ""))}" class="workflow-link">${escapeHtml(c.triggerFunction)}</a>)</span>`;
-            } else {
-              return `<a href="${escapeAttr(makeZboUrl(c.name))}" target="_blank" class="workflow-link" style="font-size: 11px;">${escapeHtml(c.name)} (${c.type === "zbo-action" ? `Act: ${escapeHtml(c.actionLabel)}` : `GQL`})</a>`;
-            }
-          }).join(", ");
-          return `
-            <div style="margin-bottom: 6px; display: flex; align-items: flex-start; gap: 4px;">
-              <div style="flex-shrink: 0;">${opBadge}</div>
-              <div style="flex: 1; font-size: 11px; line-height: 1.4;">${links}</div>
-            </div>
-          `;
-        }).join("");
+        callersListHtml = renderCrudOpCallerRows(colCallers);
       }
 
       return `
@@ -7258,32 +7302,7 @@ function renderTableCrudMap(table) {
     const tableLevelCallers = callers.filter(c => !c.columns || c.columns.length === 0);
     let tableLevelRow = "";
     if (tableLevelCallers.length > 0) {
-      const opGroups = {};
-      for (const c of tableLevelCallers) {
-        const op = normalizeOperation(c.operation);
-        if (!opGroups[op]) opGroups[op] = [];
-        opGroups[op].push(c);
-      }
-      const callersListHtml = Object.entries(opGroups).map(([op, list]) => {
-        const opBadge = `<span class="db-op op-${escapeAttr(op)}" style="padding: 1px 6px; font-size: 10px; line-height: 1.2; min-height: 0; margin-right: 8px; vertical-align: middle; display: inline-block; width: 50px; text-align: center;">${escapeHtml(capitalizeWord(op))}</span>`;
-        const links = list.map(c => {
-          if (c.type === "workflow") {
-            return `<a href="${escapeAttr(makeWorkflowUrl(c.name))}" target="_blank" class="workflow-link" style="font-size: 11px;">${escapeHtml(c.name)}</a>`;
-          } else if (c.type === "db-function") {
-            return `<a href="#" data-func-link="${escapeAttr(c.name)}" class="workflow-link" style="font-size: 11px;">${escapeHtml(c.name)} (Func)</a>`;
-          } else if (c.type === "db-trigger") {
-            return `<span style="font-size: 11px; font-weight:600; color:var(--text-strong);">${escapeHtml(c.name)} (Trigger &rarr; <a href="#" data-func-link="${escapeAttr(c.triggerFunction.replace(/\(\)$/, ""))}" class="workflow-link">${escapeHtml(c.triggerFunction)}</a>)</span>`;
-          } else {
-            return `<a href="${escapeAttr(makeZboUrl(c.name))}" target="_blank" class="workflow-link" style="font-size: 11px;">${escapeHtml(c.name)} (${c.type === "zbo-action" ? `Act: ${escapeHtml(c.actionLabel)}` : `GQL`})</a>`;
-          }
-        }).join(", ");
-        return `
-          <div style="margin-bottom: 6px; display: flex; align-items: flex-start; gap: 4px;">
-            <div style="flex-shrink: 0;">${opBadge}</div>
-            <div style="flex: 1; font-size: 11px; line-height: 1.4;">${links}</div>
-          </div>
-        `;
-      }).join("");
+      const callersListHtml = renderCrudOpCallerRows(tableLevelCallers);
 
       tableLevelRow = `
         <tr style="background: rgba(245, 158, 11, 0.05);">
@@ -7304,23 +7323,58 @@ function renderTableCrudMap(table) {
           </tr>
         </thead>
         <tbody>
-          ${rows}
           ${tableLevelRow}
+          ${rows}
+        </tbody>
+      </table>
+    `;
+  } else if (state.crudView === "operation") {
+    const groups = new Map();
+    for (const c of callers) {
+      const op = normalizeOperation(c.operation);
+      if (!groups.has(op)) groups.set(op, []);
+      groups.get(op).push(c);
+    }
+    const sortedOps = [...groups.keys()].sort((left, right) =>
+      crudOperationRank(left) - crudOperationRank(right) || left.localeCompare(right),
+    );
+    const rowsHtml = sortedOps.map((op) => {
+      const list = groups.get(op).sort((left, right) => left.type.localeCompare(right.type) || left.name.localeCompare(right.name));
+      const callersHtml = list.map((c) => {
+        const colPills = c.columns.length
+          ? c.columns.map(col => `<span class="badge" style="font-size:10px; padding:1px 5px; min-height:0; margin: 1px;">${escapeHtml(col)}</span>`).join("")
+          : `<span class="muted" style="font-size:11px;">(table-level)</span>`;
+        return `
+          <div style="display:grid; grid-template-columns:minmax(180px, 1fr) minmax(160px, 1fr); gap:8px; align-items:start; padding:4px 0;">
+            <div>${renderCrudCallerLink(c)}</div>
+            <div style="display:flex; flex-wrap:wrap;">${colPills}</div>
+          </div>
+        `;
+      }).join("");
+      return `
+        <tr>
+          <td style="width:90px; vertical-align:top;">${renderCrudOpBadge(op)}</td>
+          <td style="vertical-align:top;">${callersHtml}</td>
+        </tr>
+      `;
+    }).join("");
+
+    contentHtml = `
+      <table class="table">
+        <thead>
+          <tr>
+            <th style="width:90px;">Operation</th>
+            <th>Callers & Columns</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
         </tbody>
       </table>
     `;
   } else {
     const rowsHtml = callers.map(c => {
-      let callerLink = "";
-      if (c.type === "workflow") {
-        callerLink = `<a href="${escapeAttr(makeWorkflowUrl(c.name))}" target="_blank" class="workflow-link">${escapeHtml(c.name)} (Node: ${escapeHtml(c.nodeId)})</a>`;
-      } else if (c.type === "db-function") {
-        callerLink = `<a href="#" data-func-link="${escapeAttr(c.name)}" class="workflow-link">${escapeHtml(c.name)} (PL/pgSQL Function)</a>`;
-      } else if (c.type === "db-trigger") {
-        callerLink = `<span style="font-weight:600; color:var(--text-strong);">${escapeHtml(c.name)} (Trigger) &rarr; <a href="#" data-func-link="${escapeAttr(c.triggerFunction.replace(/\(\)$/, ""))}" class="workflow-link">${escapeHtml(c.triggerFunction)}</a></span>`;
-      } else {
-        callerLink = `<a href="${escapeAttr(makeZboUrl(c.name))}" target="_blank" class="workflow-link">${escapeHtml(c.name)} (${c.type === "zbo-action" ? `Action: ${escapeHtml(c.actionLabel)}` : `GQL: ${escapeHtml(c.nodeId)}`})</a>`;
-      }
+      const callerLink = renderCrudCallerLink(c);
 
       const colPills = c.columns.length ? c.columns.map(col => `<span class="badge" style="font-size:10px; padding:1px 5px; min-height:0; margin: 1px;">${escapeHtml(col)}</span>`).join("") : `<span class="muted" style="font-size:11px;">(table-level)</span>`;
       const op = normalizeOperation(c.operation);
@@ -7399,6 +7453,253 @@ function renderTableCrGen(table) {
         <pre id="crReportOutput" class="code-block" style="white-space: pre-wrap; font-size:11px; max-height:300px; overflow-y:auto; background: #0f172a; color: #f8fafc; padding: 12px; border-radius: 6px; font-family: monospace;"></pre>
         <button id="crDownloadBtn" type="button" class="pane-toggle active" style="margin-top:10px; width:100%; height:38px; border-radius:8px; font-weight:bold; font-size:13px;">Download Markdown Report (.md)</button>
       </div>
+    </section>
+  `;
+}
+
+function collectEnumRelations(en) {
+  const enumName = normalizeSearchText(en?.name);
+  if (!enumName) return [];
+  const rows = [];
+  for (const table of state.dbTables || []) {
+    for (const fk of table.foreignKeys || []) {
+      if (normalizeSearchText(fk.referencedTable) === enumName) {
+        rows.push({
+          table: table.name,
+          fields: fk.columns || [],
+          relation: "FK",
+          referencedFields: fk.referencedColumns || [],
+          constraint: fk.constraintName || "-",
+        });
+      }
+    }
+    for (const column of table.columns || []) {
+      if (normalizeSearchText(column.type).replace(/\(.*/, "") === enumName) {
+        rows.push({
+          table: table.name,
+          fields: [column.name],
+          relation: "Column type",
+          referencedFields: [en.name],
+          constraint: "-",
+        });
+      }
+    }
+  }
+  return uniqueBy(rows, (row) =>
+    `${row.table}|${row.fields.join(",")}|${row.relation}|${row.constraint}`.toLowerCase(),
+  ).sort((left, right) => left.table.localeCompare(right.table));
+}
+
+function renderEnumCrudMap(en) {
+  const rows = collectEnumRelations(en);
+  if (!rows.length) {
+    return `
+      <section class="detail-section">
+        <h3>Enum Relationship Map</h3>
+        <p class="muted">No table FK or enum-typed column relation detected.</p>
+      </section>
+    `;
+  }
+  return `
+    <section class="detail-section">
+      <h3>Enum Relationship Map</h3>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Table</th>
+            <th>Field Name</th>
+            <th>Relation</th>
+            <th>Referenced Field / Type</th>
+            <th>Constraint</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td><a href="#" data-table-link="${escapeAttr(row.table)}" class="workflow-link">${escapeHtml(row.table)}</a></td>
+              <td>${escapeHtml(row.fields.join(", ") || "-")}</td>
+              <td>${escapeHtml(row.relation)}</td>
+              <td>${escapeHtml(row.referencedFields.join(", ") || "-")}</td>
+              <td>${escapeHtml(row.constraint)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </section>
+  `;
+}
+
+function functionKind(fn) {
+  const source = normalizeSearchText(fn?.sourcePath);
+  return source.includes("procedure_") ? "Stored proc" : "Function";
+}
+
+function functionNamePattern(name) {
+  const escaped = String(name || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b(?:[a-zA-Z0-9_]+\\.)?${escaped}\\s*\\(`, "i");
+}
+
+function functionGraphqlRootAliases(name) {
+  const fnName = String(name || "").trim();
+  if (!fnName) return [];
+  const withoutFnPrefix = fnName.replace(/^fn_/i, "");
+  return unique([
+    fnName,
+    `ngl_${fnName}`,
+    `ngl_${withoutFnPrefix}`,
+    `ngl_fn_${withoutFnPrefix}`,
+  ]).map(normalizeSearchText);
+}
+
+function collectFunctionCallers(fn) {
+  if (!fn?.name) return [];
+  const pattern = functionNamePattern(fn.name);
+  const graphqlAliases = new Set(functionGraphqlRootAliases(fn.name));
+  const rows = [];
+  for (const workflow of state.workflows || []) {
+    const matchedNodes = (workflow.nodes || []).filter((node) =>
+      pattern.test([node.inputScript, node.outputScript, node.conditionScript].filter(Boolean).join("\n")),
+    );
+    for (const node of matchedNodes) {
+      rows.push({
+        type: "Workflow",
+        name: workflow.name,
+        context: node.id,
+        source: workflow.sourcePath || "-",
+      });
+    }
+    for (const op of workflowDbGraphqlOperations(workflow)) {
+      const root = normalizeSearchText(op.table || op.rawTable);
+      if (!graphqlAliases.has(root)) continue;
+      rows.push({
+        type: "Workflow",
+        name: workflow.name,
+        context: op.nodeId || op.operationName || "-",
+        source: workflow.sourcePath || op.source || "-",
+      });
+    }
+  }
+  for (const table of state.dbTables || []) {
+    for (const trigger of table.triggers || []) {
+      if (normalizeSearchText(trigger.function).replace(/\(\)$/, "") === normalizeSearchText(fn.name)) {
+        rows.push({
+          type: "Trigger",
+          name: trigger.name,
+          context: table.name,
+          source: table.sourcePath || "-",
+        });
+      }
+    }
+  }
+  for (const other of state.dbFunctions || []) {
+    if (other.name === fn.name) continue;
+    if (!pattern.test(other.code || "")) continue;
+    rows.push({
+      type: functionKind(other),
+      name: other.name,
+      context: "-",
+      source: other.sourcePath || "-",
+    });
+  }
+  return uniqueBy(rows, (row) =>
+    `${row.type}|${row.name}|${row.context}|${row.source}`.toLowerCase(),
+  ).sort((left, right) => left.type.localeCompare(right.type) || left.name.localeCompare(right.name));
+}
+
+function renderFunctionCallers(fn) {
+  const rows = collectFunctionCallers(fn);
+  if (!rows.length) return '<p class="muted">No workflow, trigger, stored procedure, or function caller detected.</p>';
+  return `
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Caller Type</th>
+          <th>Name</th>
+          <th>Context</th>
+          <th>Source</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((row) => `
+          <tr>
+            <td><span class="badge">${escapeHtml(row.type)}</span></td>
+            <td>${row.type === "Workflow" ? renderWorkflowInline(row.name) : row.type === "Trigger" ? escapeHtml(row.name) : `<a href="#" data-func-link="${escapeAttr(row.name)}" class="workflow-link">${escapeHtml(row.name)}</a>`}</td>
+            <td>${escapeHtml(row.context)}</td>
+            <td class="muted">${escapeHtml(row.source.split("/").pop())}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function normalizeFunctionReference(value) {
+  return normalizeSearchText(value).replace(/\(\)$/, "").replace(/^ngl\./, "");
+}
+
+function findDbFunctionByReference(value) {
+  const target = normalizeFunctionReference(value);
+  return state.dbFunctions.find((fn) => normalizeSearchText(fn.name) === target);
+}
+
+function selectedTriggerDetails() {
+  const selected = state.selectedTrigger;
+  if (!selected?.name) return null;
+  const tableName = selected.tableName || state.selectedTable?.name;
+  const table = state.dbTables.find((candidate) => candidate.name === tableName);
+  const trigger = (table?.triggers || []).find((candidate) => candidate.name === selected.name);
+  if (!trigger || !table) return null;
+  return { ...trigger, tableName: table.name, sourcePath: table.sourcePath };
+}
+
+function renderTriggerCrudMap(trigger) {
+  const fn = findDbFunctionByReference(trigger?.function);
+  if (!fn) {
+    return '<p class="muted">No parsed database function found for this trigger.</p>';
+  }
+  const rows = fn.operations || [];
+  if (!rows.length) {
+    return '<p class="muted">The trigger function has no parsed table CRUD operation.</p>';
+  }
+  return `
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Table</th>
+          <th>Operation</th>
+          <th>Source Function</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((op) => `
+          <tr>
+            <td><a href="#" data-table-link="${escapeAttr(op.table)}" class="workflow-link">${escapeHtml(op.table)}</a></td>
+            <td><span class="db-op op-${escapeAttr(normalizeOperation(op.operation))}" style="padding:1px 6px; font-size:10px;">${escapeHtml(op.operation)}</span></td>
+            <td><a href="#" data-func-link="${escapeAttr(fn.name)}" class="workflow-link">${escapeHtml(fn.name)}</a></td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderTriggerDetails() {
+  const trigger = selectedTriggerDetails();
+  if (!trigger) return renderEmpty("Select a trigger.");
+  const fnName = normalizeFunctionReference(trigger.function);
+  return `
+    <section class="detail-section">
+      <h3>Trigger: ${escapeHtml(trigger.name)}</h3>
+      ${renderKvHtml("Table", `<a href="#" data-table-link="${escapeAttr(trigger.tableName)}" class="workflow-link">${escapeHtml(trigger.tableName)}</a>`)}
+      ${renderKv("Timing", trigger.timing || "-")}
+      ${renderKv("Events", trigger.events || "-")}
+      ${renderKvHtml("Function", `<a href="#" data-func-link="${escapeAttr(fnName)}" class="workflow-link">${escapeHtml(trigger.function || "-")}</a>`)}
+      ${renderKv("Source DDL Path", trigger.sourcePath || "-")}
+    </section>
+
+    <section class="detail-section">
+      <h3>Trigger CRUD</h3>
+      ${renderTriggerCrudMap(trigger)}
     </section>
   `;
 }
@@ -7650,7 +7951,9 @@ function generateColumnCrReport(table, colName, action, newVal) {
 }
 
 function renderDatabaseDetails() {
-  if (state.dbSubmode === "tables" || state.dbSubmode === "er") {
+  if (state.dbSubmode === "triggers") {
+    els.detailContent.innerHTML = renderTriggerDetails();
+  } else if (state.dbSubmode === "tables" || state.dbSubmode === "er") {
     const table = state.selectedTable;
     if (!table) {
       els.detailContent.innerHTML = renderEmpty("Select a table.");
@@ -7693,7 +7996,8 @@ function renderDatabaseDetails() {
 
       const btnByCaller = document.getElementById("btnCrudByCaller");
       const btnByColumn = document.getElementById("btnCrudByColumn");
-      if (btnByCaller && btnByColumn) {
+      const btnByOperation = document.getElementById("btnCrudByOperation");
+      if (btnByCaller && btnByColumn && btnByOperation) {
         btnByCaller.addEventListener("click", () => {
           state.crudView = "caller";
           saveState();
@@ -7701,6 +8005,11 @@ function renderDatabaseDetails() {
         });
         btnByColumn.addEventListener("click", () => {
           state.crudView = "column";
+          saveState();
+          renderDatabaseDetails();
+        });
+        btnByOperation.addEventListener("click", () => {
+          state.crudView = "operation";
           saveState();
           renderDatabaseDetails();
         });
@@ -7715,13 +8024,20 @@ function renderDatabaseDetails() {
       els.detailContent.innerHTML = renderEmpty("Select an enum.");
       return;
     }
-    
-    let content = "";
-    if (en.values) {
-      content = `
+    if (state.activeTab === "db") {
+      els.detailContent.innerHTML = renderEnumCrudMap(en);
+      els.detailContent.querySelectorAll("[data-table-link]").forEach(el => {
+        el.addEventListener("click", (e) => {
+          selectTable(el.dataset.tableLink);
+          e.preventDefault();
+        });
+      });
+    } else {
+      els.detailContent.innerHTML = en.values ? `
         <section class="detail-section">
           <h3>Custom Enum: ${escapeHtml(en.name)}</h3>
           ${renderKv("Source DDL File", "_schema_types_sequences.sql")}
+          ${renderKv("Values Count", en.values.length)}
         </section>
         <section class="detail-section">
           <h3>Enum Values</h3>
@@ -7729,10 +8045,7 @@ function renderDatabaseDetails() {
             ${en.values.map(v => `<span class="badge success">${escapeHtml(v)}</span>`).join("")}
           </div>
         </section>
-      `;
-    } else {
-      const headers = en.rows.length ? Object.keys(en.rows[0]) : [];
-      content = `
+      ` : `
         <section class="detail-section">
           <h3>Table Enum: ${escapeHtml(en.name)}</h3>
           ${renderKv("Source Data File", en.sourcePath)}
@@ -7740,26 +8053,10 @@ function renderDatabaseDetails() {
         </section>
         <section class="detail-section">
           <h3>Enum Data Rows</h3>
-          <div style="overflow-x:auto;">
-            <table class="table" style="font-size:12px;">
-              <thead>
-                <tr>
-                  ${headers.map(h => `<th>${escapeHtml(h)}</th>`).join("")}
-                </tr>
-              </thead>
-              <tbody>
-                ${en.rows.map(row => `
-                  <tr>
-                    ${headers.map(h => `<td>${escapeHtml(row[h] === null ? "NULL" : String(row[h]))}</td>`).join("")}
-                  </tr>
-                `).join("")}
-              </tbody>
-            </table>
-          </div>
+          <p class="muted">Rows are shown in the center diagram pane with filter, sort, and pagination.</p>
         </section>
       `;
     }
-    els.detailContent.innerHTML = content;
   } else if (state.dbSubmode === "functions") {
     const fn = state.selectedFunction;
     if (!fn) {
@@ -7795,6 +8092,11 @@ function renderDatabaseDetails() {
           </tbody>
         </table>
       </section>
+
+      <section class="detail-section">
+        <h3>Function Callers</h3>
+        ${renderFunctionCallers(fn)}
+      </section>
     `;
 
     // Bind click table links in the functions DB ops tab
@@ -7805,6 +8107,12 @@ function renderDatabaseDetails() {
         e.preventDefault();
       });
     });
+    els.detailContent.querySelectorAll("[data-func-link]").forEach(el => {
+      el.addEventListener("click", (e) => {
+        selectFunction(el.dataset.funcLink);
+        e.preventDefault();
+      });
+    });
   }
 }
 
@@ -7812,20 +8120,203 @@ function renderDatabaseDiagram() {
   if (state.dbSubmode === "tables" && state.selectedTable) {
     renderTableDependencyDiagram(state.selectedTable);
   } else if (state.dbSubmode === "enums" && state.selectedEnum) {
-    if (state.selectedEnum.values) {
-      const enumCode = `CREATE TYPE ${state.selectedEnum.name} AS ENUM (\n  ${state.selectedEnum.values.map(v => `'${v}'`).join(",\n  ")}\n);`;
-      els.diagramCanvas.innerHTML = `<pre class="code-block" style="padding: 20px; margin: 20px; background: #0f172a; color: #f8fafc; font-family: monospace; border-radius: 8px; font-size: 13px; line-height: 1.5; overflow: auto; user-select: text; border: 1px solid var(--line); box-shadow: var(--shadow);">${escapeHtml(enumCode)}</pre>`;
-    } else {
-      els.diagramCanvas.innerHTML = `<div class="empty-state">Enum data table details are shown in the right pane. Select "Tables" or "Functions" for diagrams.</div>`;
-    }
+    els.diagramCanvas.innerHTML = renderEnumDiagram(state.selectedEnum);
+    bindEnumDiagramControls();
+    bindSqlDiagramControls();
   } else if (state.dbSubmode === "functions" && state.selectedFunction) {
-    els.diagramCanvas.innerHTML = `<pre class="code-block" style="padding: 20px; margin: 20px; background: #0f172a; color: #f8fafc; font-family: monospace; border-radius: 8px; font-size: 13px; line-height: 1.5; height: calc(100% - 40px); overflow: auto; user-select: text; border: 1px solid var(--line); box-shadow: var(--shadow);">${escapeHtml(state.selectedFunction.code || "No source code available.")}</pre>`;
+    els.diagramCanvas.innerHTML = renderSqlDiagramBlock(state.selectedFunction.code || "No source code available.");
+    bindSqlDiagramControls();
+  } else if (state.dbSubmode === "triggers" && state.selectedTable) {
+    renderTableDependencyDiagram(state.selectedTable);
   } else if (state.dbSubmode === "er") {
     renderErDiagram();
   } else {
     els.diagramCanvas.innerHTML = `<div class="empty-state">No database item selected</div>`;
   }
   applyZoom();
+}
+
+function renderSqlDiagramBlock(code) {
+  return `
+    <div class="diagram-code-panel diagram-selectable">
+      <button type="button" class="diagram-copy-btn" data-copy-diagram-code>Copy</button>
+      <pre class="diagram-code-block sql-code-block"><code>${highlightSql(code || "")}</code></pre>
+    </div>
+  `;
+}
+
+function highlightSql(code) {
+  let html = escapeCodeHtml(code);
+  html = html.replace(
+    /(--[^\n]*)/g,
+    '<span class="sql-comment">$1</span>',
+  );
+  html = html.replace(
+    /(\b(?:CREATE|OR|REPLACE|FUNCTION|PROCEDURE|RETURNS|LANGUAGE|PLPGSQL|DECLARE|BEGIN|END|IF|THEN|ELSE|ELSIF|LOOP|FOR|WHILE|RETURN|SELECT|INSERT|UPDATE|DELETE|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|ON|INTO|VALUES|SET|CASE|WHEN|AND|OR|NOT|NULL|IS|AS|WITH|PERFORM|RAISE|EXCEPTION)\b)/gi,
+    '<span class="sql-keyword">$1</span>',
+  );
+  html = html.replace(
+    /('(?:''|[^'])*')/g,
+    '<span class="sql-string">$1</span>',
+  );
+  html = html.replace(
+    /\b(\d+(?:\.\d+)?)\b/g,
+    '<span class="sql-number">$1</span>',
+  );
+  return html;
+}
+
+async function copyDiagramCode() {
+  const code = els.diagramCanvas.querySelector(".sql-code-block")?.textContent || "";
+  if (!code) return;
+  const button = els.diagramCanvas.querySelector("[data-copy-diagram-code]");
+  const oldText = button?.textContent;
+  try {
+    await navigator.clipboard.writeText(code);
+    if (button) {
+      button.textContent = "Copied!";
+      setTimeout(() => { button.textContent = oldText || "Copy"; }, 1200);
+    }
+  } catch {
+    copyTextFallback(code);
+    if (button) {
+      button.textContent = "Copied!";
+      setTimeout(() => { button.textContent = oldText || "Copy"; }, 1200);
+    }
+  }
+}
+
+function bindSqlDiagramControls() {
+  els.diagramCanvas.querySelectorAll("[data-copy-diagram-code]").forEach((button) => {
+    button.addEventListener("click", copyDiagramCode);
+  });
+}
+
+function renderEnumDiagram(en) {
+  if (en.values) {
+    const enumCode = `CREATE TYPE ${en.name} AS ENUM (\n  ${en.values.map(v => `'${v}'`).join(",\n  ")}\n);`;
+    return renderSqlDiagramBlock(enumCode);
+  }
+  return renderEnumDataTable(en);
+}
+
+function enumDataHeaders(en) {
+  return en?.rows?.length ? Object.keys(en.rows[0]) : [];
+}
+
+function filteredSortedEnumRows(en) {
+  const headers = enumDataHeaders(en);
+  const filter = normalizeSearchText(state.enumTableFilter);
+  let rows = [...(en.rows || [])];
+  if (filter) {
+    rows = rows.filter((row) =>
+      headers.some((header) => normalizeSearchText(row[header]).includes(filter)),
+    );
+  }
+  const sortField = state.enumTableSort?.field;
+  if (sortField) {
+    const direction = state.enumTableSort.direction === "desc" ? -1 : 1;
+    rows.sort((left, right) =>
+      String(left[sortField] ?? "").localeCompare(String(right[sortField] ?? ""), undefined, {
+        numeric: true,
+        sensitivity: "base",
+      }) * direction,
+    );
+  }
+  return rows;
+}
+
+function renderEnumDataTable(en) {
+  const headers = enumDataHeaders(en);
+  const rows = filteredSortedEnumRows(en);
+  const pageSize = 200;
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const page = clamp(state.enumTablePage || 1, 1, totalPages);
+  state.enumTablePage = page;
+  const pageStart = (page - 1) * pageSize;
+  const pageRows = rows.slice(pageStart, page * pageSize);
+  return `
+    <div class="enum-diagram-table diagram-selectable">
+      <div class="enum-table-toolbar">
+        <div>
+          <strong>${escapeHtml(en.name)}</strong>
+          <span class="muted">${rows.length}/${(en.rows || []).length} rows</span>
+        </div>
+        <input id="enumTableFilter" type="search" value="${escapeAttr(state.enumTableFilter)}" placeholder="Filter rows by any field" />
+        ${totalPages > 1 ? `
+          <div class="enum-pagination">
+            <button type="button" data-enum-page="prev" ${page <= 1 ? "disabled" : ""}>Prev</button>
+            <span>${page} / ${totalPages}</span>
+            <button type="button" data-enum-page="next" ${page >= totalPages ? "disabled" : ""}>Next</button>
+          </div>
+        ` : ""}
+      </div>
+      <div class="enum-table-scroll">
+        <table class="table enum-data-table">
+          <thead>
+            <tr>
+              <th class="enum-row-number">#</th>
+              ${headers.map((header) => {
+                const isSorted = state.enumTableSort?.field === header;
+                const marker = isSorted ? (state.enumTableSort.direction === "desc" ? " ↓" : " ↑") : "";
+                return `<th><button type="button" data-enum-sort="${escapeAttr(header)}">${escapeHtml(header)}${marker}</button></th>`;
+              }).join("")}
+            </tr>
+          </thead>
+          <tbody>
+            ${pageRows.map((row, index) => `
+              <tr>
+                <td class="enum-row-number">${pageStart + index + 1}</td>
+                ${headers.map((header) => `<td>${escapeHtml(row[header] === null ? "NULL" : String(row[header] ?? ""))}</td>`).join("")}
+              </tr>
+            `).join("") || `<tr><td colspan="${headers.length + 1 || 1}" class="muted">No rows match the current filter.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function bindEnumDiagramControls() {
+  const filter = document.getElementById("enumTableFilter");
+  if (filter) {
+    filter.addEventListener("input", () => {
+      const cursorStart = filter.selectionStart;
+      const cursorEnd = filter.selectionEnd;
+      state.enumTableFilter = filter.value;
+      state.enumTablePage = 1;
+      renderDatabaseDiagram();
+      const nextFilter = document.getElementById("enumTableFilter");
+      if (nextFilter) {
+        nextFilter.focus();
+        nextFilter.setSelectionRange(cursorStart ?? nextFilter.value.length, cursorEnd ?? nextFilter.value.length);
+      }
+    });
+  }
+  els.diagramCanvas.querySelectorAll("[data-enum-sort]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const field = button.dataset.enumSort;
+      const current = state.enumTableSort || {};
+      state.enumTableSort = {
+        field,
+        direction: current.field === field && current.direction === "asc" ? "desc" : "asc",
+      };
+      state.enumTablePage = 1;
+      renderDatabaseDiagram();
+    });
+  });
+  els.diagramCanvas.querySelectorAll("[data-enum-page]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const rows = filteredSortedEnumRows(state.selectedEnum);
+      const totalPages = Math.max(1, Math.ceil(rows.length / 200));
+      state.enumTablePage = clamp(
+        (state.enumTablePage || 1) + (button.dataset.enumPage === "next" ? 1 : -1),
+        1,
+        totalPages,
+      );
+      renderDatabaseDiagram();
+    });
+  });
 }
 
 function addOpsForTable(ops, tableName, target) {
