@@ -35,6 +35,7 @@ const state = {
   nodePositions: { zbo: {}, zoral: {}, database: {} },
   activeTab: "overview",
   showDbBadges: true,
+  showResultTableUsage: true,
   showConditionText: false,
   showEdgeLabels: true,
   enableNodeDrag: false,
@@ -108,12 +109,16 @@ const els = {
   closeSettingsBtn: document.querySelector("#closeSettingsBtn"),
   saveSettingsBtn: document.querySelector("#saveSettingsBtn"),
   copyListButton: document.querySelector("#copyListButton"),
+  toggleResultTableUsage: document.querySelector("#toggleResultTableUsage"),
+  resultTableUsageToggleContainer: document.querySelector("#resultTableUsageToggleContainer"),
 };
 
 const STORAGE_KEY = "workflowHelper.state.v4";
 const REBUILD_WINDOWS_FILE = "rebuild-index.bat";
 const REBUILD_MAC_COMMAND =
   "node scripts/build-index.mjs && node scripts/encrypt-index.mjs";
+let workflowLookupCache = null;
+const workflowViaNodeOpsCache = new WeakMap();
 
 // The diagram pane must never retain a scroll offset — its header is fixed and
 // the canvas scrolls internally. `scrollIntoView()` on a deep timeline row/node
@@ -403,6 +408,7 @@ function restoreState() {
     state.selectedEdge = saved.selectedEdge || null;
     state.activeTab = saved.activeTab || "overview";
     state.showDbBadges = saved.showDbBadges ?? true;
+    state.showResultTableUsage = saved.showResultTableUsage ?? true;
     state.showConditionText = saved.showConditionText ?? false;
     state.showEdgeLabels = saved.showEdgeLabels ?? true;
     state.enableNodeDrag = saved.enableNodeDrag ?? false;
@@ -442,6 +448,7 @@ function saveState() {
       selectedEdge: state.selectedEdge || null,
       activeTab: state.activeTab,
       showDbBadges: state.showDbBadges,
+      showResultTableUsage: state.showResultTableUsage,
       showConditionText: state.showConditionText,
       showEdgeLabels: state.showEdgeLabels,
       enableNodeDrag: state.enableNodeDrag,
@@ -465,6 +472,7 @@ function applyFormState() {
   els.searchInput.value = state.query;
   els.searchScope.value = state.searchScope;
   els.toggleDbBadges.checked = state.showDbBadges;
+  if (els.toggleResultTableUsage) els.toggleResultTableUsage.checked = state.showResultTableUsage;
   if (els.toggleConditionText) els.toggleConditionText.checked = state.showConditionText;
   if (els.toggleEdgeLabels) els.toggleEdgeLabels.checked = state.showEdgeLabels;
   if (els.toggleNodeDrag) els.toggleNodeDrag.checked = state.enableNodeDrag;
@@ -549,6 +557,9 @@ function applyModeState() {
   const isZoral = state.activeMode === "zoral";
   const isZbo = state.activeMode === "zbo";
 
+  if (els.resultTableUsageToggleContainer) {
+    els.resultTableUsageToggleContainer.style.display = isZoral ? "inline-flex" : "none";
+  }
   if (els.toggleDbBadges) {
     els.toggleDbBadges.parentElement.style.display = (isZoral || isZbo) ? "inline-flex" : "none";
   }
@@ -822,6 +833,14 @@ function bindEvents() {
     saveState();
     renderActiveDiagram();
   });
+
+  if (els.toggleResultTableUsage) {
+    els.toggleResultTableUsage.addEventListener("change", () => {
+      state.showResultTableUsage = els.toggleResultTableUsage.checked;
+      saveState();
+      renderResultsNow();
+    });
+  }
 
   if (els.toggleConditionText) {
     els.toggleConditionText.addEventListener("change", () => {
@@ -1256,7 +1275,7 @@ function applyDiagramDragState() {
 }
 
 function isValidSearchScope(scope) {
-  return ["all", "workflow", "zbo", "parameter", "field", "table", "graphql", "code"].includes(scope);
+  return ["all", "workflow", "workflowIndirect", "zbo", "parameter", "field", "table", "graphql", "code"].includes(scope);
 }
 
 function prepareSearchIndex() {
@@ -1382,6 +1401,14 @@ function workflowNameSearchText(workflow) {
       op.operationName,
       op.nodeId,
     ]),
+    ...getWorkflowViaNodeOps(workflow).flatMap((op) => [
+      op.table,
+      op.rawTable,
+      op.operation,
+      op.operationName,
+      op.viaNode,
+      op.viaWorkflow,
+    ]),
     ...(workflow.calledWorkflows || []),
     ...(workflow.inboundCallers || []).map((caller) => caller.workflow),
   ]).join(" ");
@@ -1479,7 +1506,7 @@ function workflowMatchesScope(workflow, query) {
   const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) return false;
   if (state.searchMode === "exact") {
-    if (state.searchScope === "workflow" || state.searchScope === "all" || state.searchScope === "zbo") {
+    if (state.searchScope === "all" || state.searchScope === "zbo") {
       return (workflow._exactSearchCandidates || []).includes(normalizedQuery);
     }
   }
@@ -1492,10 +1519,11 @@ function workflowMatchesScope(workflow, query) {
   }
 
   if (state.searchScope === "workflow") {
-    return (
-      matches(workflow.name, query) ||
-      matches(workflow.description, query)
-    );
+    return matches(workflow.name, query);
+  }
+
+  if (state.searchScope === "workflowIndirect") {
+    return workflowIndirectCandidates(workflow).some((candidate) => matches(candidate, query));
   }
 
   if (state.searchScope === "zbo") {
@@ -1505,7 +1533,7 @@ function workflowMatchesScope(workflow, query) {
   if (state.searchScope === "field") {
     const fieldMatch = workflow.fieldRefs.some((field) => matches(field, query));
     if (fieldMatch) return true;
-    return workflow.dbOperations.some((op) => (op.columns || []).some((col) => matches(col, query)));
+    return getWorkflowSearchOperations(workflow).some((op) => (op.columns || []).some((col) => matches(col, query)));
   }
 
   if (state.searchScope === "code") {
@@ -1519,11 +1547,11 @@ function workflowMatchesScope(workflow, query) {
   }
 
   if (state.searchScope === "table") {
-    return workflow.dbOperations.some((op) => matches(op.table, query));
+    return getWorkflowSearchOperations(workflow).some((op) => matches(op.table, query));
   }
 
   if (state.searchScope === "graphql") {
-    return workflow.graphqlOperations.some((op) => {
+    return getWorkflowSearchOperations(workflow).some((op) => {
       return (
         matches(op.table, query) ||
         matches(op.operation, query) ||
@@ -1616,8 +1644,36 @@ function renderResults() {
       : "");
 
   els.resultsList.querySelectorAll("[data-workflow-name]").forEach((button) => {
-    button.addEventListener("click", () => selectWorkflow(button.dataset.workflowName));
+    button.addEventListener("click", (event) => {
+      const tableJump = event.target.closest("[data-workflow-table-pan]");
+      if (tableJump) {
+        event.preventDefault();
+        event.stopPropagation();
+        jumpToWorkflowTableUsage(button.dataset.workflowName, tableJump.dataset.workflowTablePan);
+        return;
+      }
+      selectWorkflow(button.dataset.workflowName);
+    });
   });
+}
+
+function workflowIndirectCandidates(workflow) {
+  return unique([
+    workflow.name,
+    ...(workflow.calledWorkflows || []),
+    ...(workflow.nodes || []).flatMap((node) => [
+      node.id,
+      node.callName,
+      stripCallPrefix(node.id),
+      stripCallPrefix(node.callName),
+    ]),
+    ...getWorkflowViaNodeOps(workflow).flatMap((op) => [
+      op.viaNode,
+      op.viaWorkflow,
+      op.sourceWorkflow,
+      op.sourceNodeId,
+    ]),
+  ]);
 }
 
 function getFilteredZboAreas() {
@@ -1670,7 +1726,7 @@ function zboAreaMatchesScope(area, query) {
   if (state.searchScope === "zbo") {
     return (area._normalizedZboText || "").includes(normalizedQuery);
   }
-  if (state.searchScope === "workflow") {
+  if (state.searchScope === "workflow" || state.searchScope === "workflowIndirect") {
     return (
       (area.zoralCalls || []).some((call) => matches(call.workflow, query)) ||
       (area.actions || []).some((action) =>
@@ -1826,7 +1882,8 @@ function renderZboResultDbOps(area) {
 function renderResultItem(workflow) {
   const isActive = state.selectedWorkflow?.name === workflow.name;
   const nodeCount = workflow.nodes.length;
-  const dbCount = workflow.dbOperations.length;
+  const indirectDbCount = getWorkflowViaNodeOps(workflow).length;
+  const dbCount = workflow.dbOperations.length + indirectDbCount;
   const inboundCount = workflow.inboundCallers.length;
   return `
     <button class="result-item ${isActive ? "active" : ""}" type="button" data-workflow-name="${escapeAttr(workflow.name)}">
@@ -1837,16 +1894,17 @@ function renderResultItem(workflow) {
         <span class="badge">${escapeHtml(workflow.type || "unknown")}</span>
         <span class="badge">${nodeCount} nodes</span>
         ${dbCount ? `<span class="badge accent">${dbCount} DB/GQL</span>` : ""}
+        ${indirectDbCount ? `<span class="badge">&rarr; via node</span>` : ""}
         ${inboundCount ? `<span class="badge success">${inboundCount} inbound</span>` : ""}
         ${workflow.parseWarning ? `<span class="badge warning">limited</span>` : ""}
       </div>
-      ${renderResultDbOps(workflow)}
+      ${state.showResultTableUsage ? renderResultDbOps(workflow) : ""}
     </button>
   `;
 }
 
 function getSearchMatchedOperations(workflow) {
-  const ops = workflow.dbOperations || [];
+  const ops = getWorkflowSearchOperations(workflow);
   if (!state.query) return ops;
   if (!["table", "all", "graphql"].includes(state.searchScope)) return ops;
   const matchedOps = ops.filter((op) => {
@@ -1860,29 +1918,87 @@ function getSearchMatchedOperations(workflow) {
   return matchedOps;
 }
 
+function getWorkflowSearchOperations(workflow) {
+  return [...(workflow.dbOperations || []), ...(workflow.graphqlOperations || []), ...getWorkflowViaNodeOps(workflow)];
+}
+
+function getWorkflowViaNodeOps(workflow) {
+  if (!workflow || !Array.isArray(workflow.nodes)) return [];
+  const cached = workflowViaNodeOpsCache.get(workflow);
+  if (cached) return cached;
+  const rows = [];
+  for (const node of workflow.nodes) {
+    const calledWorkflow = resolveCalledWorkflowForNode(node);
+    if (!calledWorkflow || calledWorkflow.name === workflow.name) continue;
+    for (const op of workflowDbGraphqlOperations(calledWorkflow)) {
+      if (!op || !op.table) continue;
+      rows.push({
+        ...op,
+        nodeId: node.id,
+        sourceNodeId: op.nodeId || "",
+        sourceWorkflow: calledWorkflow.name,
+        viaNode: node.id,
+        viaWorkflow: calledWorkflow.name,
+        indirect: true,
+      });
+    }
+  }
+  const uniqueRows = uniqueBy(rows, (row) =>
+    [
+      row.nodeId,
+      row.sourceWorkflow,
+      row.sourceNodeId,
+      row.source,
+      row.operation,
+      row.table,
+      row.operationName,
+    ].join("|").toLowerCase(),
+  );
+  workflowViaNodeOpsCache.set(workflow, uniqueRows);
+  return uniqueRows;
+}
+
 function getMatchedTableOps(workflow) {
   const byTable = new Map();
   const matchedTables = new Set();
-  for (const op of workflow.dbOperations || []) {
+  for (const op of getWorkflowSearchOperations(workflow)) {
     if (!op.table) continue;
     const normalized = normalizeOperation(op.operation);
-    const operations = byTable.get(op.table) || new Set();
-    operations.add(normalized);
-    byTable.set(op.table, operations);
+    const groupKey = op.indirect ? `${op.table}|indirect` : `${op.table}|direct`;
+    const entry = byTable.get(groupKey) || {
+      table: op.table,
+      operations: new Set(),
+      indirect: Boolean(op.indirect),
+      viaNodes: new Set(),
+      viaWorkflows: new Set(),
+    };
+    entry.operations.add(normalized);
+    if (op.indirect) {
+      if (op.viaNode) entry.viaNodes.add(op.viaNode);
+      if (op.viaWorkflow) entry.viaWorkflows.add(op.viaWorkflow);
+    }
+    byTable.set(groupKey, entry);
     if (operationMatchesTableQuery(op) && operationMatchesSelectedFilter(op)) {
-      matchedTables.add(op.table);
+      matchedTables.add(groupKey);
     }
   }
   return [...byTable.entries()]
-    .filter(([table]) => {
+    .filter(([key]) => {
       if (!state.matchOps.length && !shouldConstrainTableUsageByQuery()) return true;
-      return matchedTables.has(table);
+      return matchedTables.has(key);
     })
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([table, operations]) => ({
-      table,
-      operations: [...operations].sort(),
-    }));
+    .map(([, entry]) => ({
+      ...entry,
+      operations: [...entry.operations].sort(),
+      viaNodes: [...entry.viaNodes].sort(),
+      viaWorkflows: [...entry.viaWorkflows].sort(),
+    }))
+    .sort((left, right) => {
+      const tableSort = left.table.localeCompare(right.table);
+      if (tableSort) return tableSort;
+      if (left.indirect !== right.indirect) return left.indirect ? 1 : -1;
+      return 0;
+    });
 }
 
 function normalizeOperation(value) {
@@ -1896,7 +2012,8 @@ function renderResultDbOps(workflow) {
     .map(
       (entry) => `
         <div class="result-db-row">
-          <span class="db-op-table">${escapeHtml(entry.table)}</span>
+          <span class="db-op-table db-op-table-jump" data-workflow-table-pan="${escapeAttr(entry.table)}" title="Pan diagram to nodes using ${escapeAttr(entry.table)}">${escapeHtml(entry.table)}</span>
+          ${entry.indirect ? `<span class="db-op-via-icon" title="${escapeAttr(indirectTableUsageTitle(entry))}" aria-label="Indirect table usage via called workflow">&#8618;</span>` : ""}
           ${entry.operations
             .map(
               (op) =>
@@ -1913,6 +2030,112 @@ function renderResultDbOps(workflow) {
       ${rows}
     </div>
   `;
+}
+
+function indirectTableUsageTitle(entry) {
+  const viaNodes = unique([...(entry?.viaNodes || []), entry?.viaNode].filter(Boolean));
+  const viaWorkflows = unique([...(entry?.viaWorkflows || []), entry?.viaWorkflow].filter(Boolean));
+  const details = [];
+  if (viaNodes.length) details.push(`via node: ${viaNodes.join(", ")}`);
+  if (viaWorkflows.length) details.push(`called workflow: ${viaWorkflows.join(", ")}`);
+  return details.length
+    ? `Indirect table usage through ${details.join("; ")}`
+    : "Indirect table usage through a called workflow node";
+}
+
+function tableUsageTooltip(entry) {
+  const operations = entry.operations || entry.ops || [];
+  const opText = operations.length ? ` [${operations.join(" | ")}]` : "";
+  const viaText = entry.indirect ? ` - ${indirectTableUsageTitle(entry)}` : "";
+  return `${entry.table}${opText}${viaText}`;
+}
+
+function jumpToWorkflowTableUsage(workflowName, table) {
+  const workflow = resolveWorkflowByName(workflowName);
+  if (!workflow || !table) return;
+  if (state.activeMode !== "zoral" || state.selectedWorkflow?.name !== workflow.name) {
+    selectWorkflow(workflow.name);
+  }
+  focusWorkflowTableNodes(workflow.name, table);
+}
+
+function focusWorkflowTableNodes(workflowName, table) {
+  const workflow = resolveWorkflowByName(workflowName);
+  if (!workflow || !table) return;
+  const nodeIds = getWorkflowNodeIdsForTable(workflow, table);
+  if (!nodeIds.length) return;
+  state.selectedEdge = null;
+  state.selectedNodeId = nodeIds.length === 1 ? nodeIds[0] : null;
+  if (state.selectedNodeId) {
+    state.activeTab = "node";
+    document
+      .querySelectorAll("[data-tab]")
+      .forEach((item) => item.classList.toggle("active", item.dataset.tab === state.activeTab));
+  }
+  saveState();
+  renderDiagram();
+  renderDetails();
+  window.requestAnimationFrame(() => focusDiagramNodeIds(nodeIds));
+}
+
+function getWorkflowNodeIdsForTable(workflow, table) {
+  const target = String(table || "").toLowerCase();
+  return unique(
+    getWorkflowSearchOperations(workflow)
+      .filter((op) => String(op.table || "").toLowerCase() === target)
+      .map((op) => op.nodeId)
+      .filter(Boolean),
+  );
+}
+
+function focusDiagramNodeIds(nodeIds) {
+  const centers = els.diagramCanvas._zoralNodeCenters;
+  if (!centers || !nodeIds?.length) return;
+  const workflow = state.selectedWorkflow;
+  const nodeById = new Map((workflow?.nodes || []).map((node) => [node.id, node]));
+  const targets = unique(nodeIds)
+    .map((nodeId) => {
+      const center = centers.get(nodeId);
+      const node = nodeById.get(nodeId);
+      if (!center || !node) return null;
+      const size = nodeSize(node);
+      return {
+        center,
+        left: center.x - size.width / 2,
+        right: center.x + size.width / 2,
+        top: center.y - size.height / 2,
+        bottom: center.y + size.height / 2,
+      };
+    })
+    .filter(Boolean);
+  if (!targets.length) return;
+
+  if (targets.length === 1) {
+    panDiagramToPoint(targets[0].center.x, targets[0].center.y);
+    return;
+  }
+
+  const bounds = targets.reduce(
+    (acc, target) => ({
+      left: Math.min(acc.left, target.left),
+      right: Math.max(acc.right, target.right),
+      top: Math.min(acc.top, target.top),
+      bottom: Math.max(acc.bottom, target.bottom),
+    }),
+    { left: Infinity, right: -Infinity, top: Infinity, bottom: -Infinity },
+  );
+  const padding = 180;
+  const width = Math.max(1, bounds.right - bounds.left + padding);
+  const height = Math.max(1, bounds.bottom - bounds.top + padding);
+  const fitZoom = Math.min(1.6, els.diagramCanvas.clientWidth / width, els.diagramCanvas.clientHeight / height);
+  setZoom(fitZoom);
+  panDiagramToPoint((bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2);
+}
+
+function panDiagramToPoint(x, y) {
+  const left = Math.max(0, x * state.zoom - els.diagramCanvas.clientWidth / 2);
+  const top = Math.max(0, y * state.zoom - els.diagramCanvas.clientHeight / 2);
+  els.diagramCanvas.scrollTo({ left, top, behavior: "smooth" });
 }
 
 function capitalizeWord(value) {
@@ -2126,7 +2349,8 @@ function renderDiagram() {
   const offsetX = padding - bounds.minX;
   const offsetY = padding - bounds.minY;
 
-  const dbOpsByNode = workflow.dbOperations.reduce((acc, op) => {
+  const diagramOps = getWorkflowSearchOperations(workflow);
+  const dbOpsByNode = diagramOps.reduce((acc, op) => {
     const ops = acc.get(op.nodeId) || [];
     ops.push(op);
     acc.set(op.nodeId, ops);
@@ -3000,7 +3224,10 @@ function renderZboDbBadge(node) {
   const overflow = groups.length - shown.length;
   const iconCx = node.x - 72;
   const iconCy = node.y + 42;
-  const tooltip = groups.map((group) => `${group.table} [${group.ops.join(" | ")}]`).join("\n");
+  const tooltip = groups.map((group) => {
+    const viaText = group.indirect ? ` via ${group.viaNodes.join(", ")}` : "";
+    return `${group.table} [${group.ops.join(" | ")}]${viaText}`;
+  }).join("\n");
   const lineHeight = 13;
   const listX = iconCx + 13;
   const listTop = iconCy - ((shown.length - 1) * lineHeight) / 2;
@@ -4141,7 +4368,7 @@ function renderDbBadge(center, node, ops) {
   const anchorY = center.y - halfH;
   const iconCx = anchorX + 12;
   const iconCy = anchorY - 26;
-  const tooltip = groups.map((group) => `${group.table} [${group.ops.join(" | ")}]`).join("\n");
+  const tooltip = groups.map(tableUsageTooltip).join("\n");
   const lineHeight = 14;
   const listX = iconCx + 13;
   const listTop = iconCy - ((groups.length - 1) * lineHeight) / 2;
@@ -4154,7 +4381,11 @@ function renderDbBadge(center, node, ops) {
             `<tspan class="db-op-code op-${escapeAttr(op)}" dx="5">${escapeHtml(opCode(op))}</tspan>`,
         )
         .join("");
-      return `<text class="node-db-list" x="${listX}" y="${y}"><tspan class="db-table-name">${escapeHtml(truncate(group.table, 22))}</tspan>${opSpans}</text>`;
+      const viaMarker = group.indirect
+        ? `<tspan class="db-via-marker" dx="5">&#8594;</tspan>`
+        : "";
+      const rowTitle = tableUsageTooltip(group);
+      return `<text class="node-db-list" x="${listX}" y="${y}"><title>${escapeHtml(rowTitle)}</title><tspan class="db-table-name">${escapeHtml(truncate(group.table, 22))}</tspan>${viaMarker}${opSpans}</text>`;
     })
     .join("");
   return `
@@ -4184,15 +4415,28 @@ function groupOpsByTable(ops) {
   const byTable = new Map();
   for (const op of ops || []) {
     if (!op.table) continue;
-    const operations = byTable.get(op.table) || new Set();
-    operations.add(String(op.operation || "").toLowerCase());
-    byTable.set(op.table, operations);
+    const entry = byTable.get(op.table) || {
+      operations: new Set(),
+      indirect: false,
+      viaNodes: new Set(),
+      viaWorkflows: new Set(),
+    };
+    entry.operations.add(String(op.operation || "").toLowerCase());
+    if (op.indirect) {
+      entry.indirect = true;
+      if (op.viaNode) entry.viaNodes.add(op.viaNode);
+      if (op.viaWorkflow) entry.viaWorkflows.add(op.viaWorkflow);
+    }
+    byTable.set(op.table, entry);
   }
   return [...byTable.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([table, operations]) => ({
+    .map(([table, entry]) => ({
       table,
-      ops: [...operations].sort(),
+      ops: [...entry.operations].sort(),
+      indirect: entry.indirect,
+      viaNodes: [...entry.viaNodes].sort(),
+      viaWorkflows: [...entry.viaWorkflows].sort(),
     }));
 }
 
@@ -4717,14 +4961,155 @@ function renderEdgeDetail(workflow) {
   `;
 }
 
+function getWorkflowLookupCache() {
+  if (workflowLookupCache?.source === state.workflows) return workflowLookupCache;
+  const byName = new Map();
+  const byLower = new Map();
+  for (const workflow of state.workflows || []) {
+    byName.set(workflow.name, workflow);
+    byLower.set(String(workflow.name || "").toLowerCase(), workflow);
+  }
+  workflowLookupCache = { source: state.workflows, byName, byLower };
+  return workflowLookupCache;
+}
+
+function resolveWorkflowByName(name) {
+  const text = String(name || "").trim();
+  if (!text || /[{}]/.test(text)) return null;
+  const cache = getWorkflowLookupCache();
+  return cache.byName.get(text) || cache.byLower.get(text.toLowerCase()) || null;
+}
+
+function stripCallPrefix(name) {
+  return String(name || "").replace(/^call[_-]?/i, "");
+}
+
+function workflowCandidateNamesForNode(node) {
+  if (!node) return [];
+  return unique([
+    node.callName,
+    node.id,
+    node.name,
+    stripCallPrefix(node.callName),
+    stripCallPrefix(node.id),
+  ]).filter((name) => name && !/[{}]/.test(name));
+}
+
+function resolveCalledWorkflowForNode(node) {
+  for (const candidate of workflowCandidateNamesForNode(node)) {
+    const workflow = resolveWorkflowByName(candidate);
+    if (workflow) return workflow;
+  }
+  return null;
+}
+
+function operationMatchesNode(op, node) {
+  if (!op || !node) return false;
+  const opNode = normalizeSearchText(op.nodeId);
+  if (!opNode) return false;
+  return workflowCandidateNamesForNode(node).some((candidate) => {
+    const key = normalizeSearchText(candidate);
+    return opNode === key || opNode.includes(key) || key.includes(opNode);
+  });
+}
+
+function workflowDbGraphqlOperations(workflow) {
+  if (!workflow) return [];
+  return [...(workflow.dbOperations || []), ...(workflow.graphqlOperations || [])];
+}
+
+function collectWorkflowOperations(workflow, path, node = null) {
+  return workflowDbGraphqlOperations(workflow)
+    .filter((op) => !node || operationMatchesNode(op, node))
+    .map((op) => ({
+      path,
+      workflow: workflow.name,
+      nodeId: op.nodeId || "-",
+      source: op.source || "-",
+      operation: op.operation || "-",
+      table: op.table || op.rawTable || "-",
+      confidence: op.confidence || "-",
+    }));
+}
+
+function collectWorkflowNodeOutgoingOps(workflow, node) {
+  if (!workflow || !node) return [];
+  const rows = [];
+  const addRows = (items) => {
+    rows.push(...items);
+  };
+
+  const calledWorkflow = resolveCalledWorkflowForNode(node);
+  if (calledWorkflow) {
+    addRows(collectWorkflowOperations(calledWorkflow, `${node.id} -> ${calledWorkflow.name}`));
+  }
+
+  const outgoingEdges = (workflow.edges || []).filter((edge) => edge.from === node.id);
+  for (const edge of outgoingEdges) {
+    const targetNode = (workflow.nodes || []).find((candidate) => candidate.id === edge.to);
+    if (!targetNode) continue;
+    const edgePath = `${node.id} -> ${targetNode.id}`;
+    addRows(collectWorkflowOperations(workflow, edgePath, targetNode));
+
+    const targetCalledWorkflow = resolveCalledWorkflowForNode(targetNode);
+    if (targetCalledWorkflow) {
+      addRows(collectWorkflowOperations(targetCalledWorkflow, `${edgePath} -> ${targetCalledWorkflow.name}`));
+    }
+  }
+
+  return uniqueBy(rows, (row) =>
+    [
+      row.path,
+      row.workflow,
+      row.nodeId,
+      row.source,
+      row.operation,
+      row.table,
+      row.confidence,
+    ].join("|").toLowerCase(),
+  );
+}
+
+function renderOutgoingOperationsTable(items) {
+  if (!items.length) return '<p class="muted">No outgoing or called workflow DB/GQL operation detected.</p>';
+  return `
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Path</th>
+          <th>Workflow / Node</th>
+          <th>Operation</th>
+          <th>Table / Root</th>
+          <th>Source</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${items.map((item) => `
+          <tr>
+            <td>${escapeHtml(item.path)}</td>
+            <td>
+              <div>${escapeHtml(item.workflow)}</div>
+              <small class="muted">${escapeHtml(item.nodeId)}</small>
+            </td>
+            <td>${escapeHtml(item.operation)}</td>
+            <td>${escapeHtml(item.table)}</td>
+            <td>${escapeHtml(`${item.source}${item.confidence && item.confidence !== "-" ? ` / ${item.confidence}` : ""}`)}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
 function renderNodeDetail(workflow) {
   const node =
     workflow.nodes.find((item) => item.id === state.selectedNodeId) || workflow.nodes[0];
   if (!node) return renderEmpty("No node selected.");
   const outgoing = workflow.edges.filter((edge) => edge.from === node.id);
   const incoming = workflow.edges.filter((edge) => edge.to === node.id);
-  const nodeOps = workflow.dbOperations.filter((op) => op.nodeId === node.id);
+  const nodeOps = getWorkflowSearchOperations(workflow).filter((op) => op.nodeId === node.id);
   const nodeSnippets = workflow.graphqlSnippets.filter((item) => item.nodeId === node.id);
+  const outgoingOps = collectWorkflowNodeOutgoingOps(workflow, node);
 
   return `
     <section class="detail-section">
@@ -4761,8 +5146,13 @@ function renderNodeDetail(workflow) {
 
     <section class="detail-section">
       <h3>Node DB / GraphQL</h3>
-      ${renderOperationsTable(nodeOps, { showNode: false })}
+      ${renderOperationsTable(nodeOps, { showNode: false, showUsage: true, showVia: true })}
       ${nodeSnippets.map((item) => renderCodeSection(`GraphQL Snippet`, item.snippet)).join("")}
+    </section>
+
+    <section class="detail-section">
+      <h3>Outgoing DB / GraphQL Impact</h3>
+      ${renderOutgoingOperationsTable(outgoingOps)}
     </section>
   `;
 }
@@ -5049,10 +5439,11 @@ function edgeLabel(edge) {
 }
 
 function renderDbGraphql(workflow) {
+  const ops = getWorkflowSearchOperations(workflow);
   return `
     <section class="detail-section">
       <h3>Database / GraphQL Operations</h3>
-      ${renderOperationsTable(workflow.dbOperations)}
+      ${renderOperationsTable(ops, { showUsage: true, showVia: true })}
     </section>
     <section class="detail-section">
       <h3>GraphQL Snippets</h3>
@@ -5068,33 +5459,60 @@ function renderDbGraphql(workflow) {
 function renderOperationsTable(ops, options = {}) {
   if (!ops.length) return '<p class="muted">No DB or GraphQL operation detected.</p>';
   const showNode = options.showNode !== false;
+  const showUsage = options.showUsage || ops.some((op) => op.indirect);
+  const showVia = options.showVia || ops.some((op) => op.indirect);
   return `
-    <table class="table">
-      <thead>
-        <tr>
-          ${showNode ? "<th>Node</th>" : ""}
-          <th>Source</th>
-          <th>Operation</th>
-          <th>Table / Root</th>
-          <th>Confidence</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${ops
-          .map(
-            (op) => `
+    <div class="table-scroll">
+      <table class="table">
+        <thead>
           <tr>
-            ${showNode ? `<td>${escapeHtml(op.nodeId)}</td>` : ""}
-            <td>${escapeHtml(op.source)}</td>
-            <td>${escapeHtml(op.operation)}</td>
-            <td>${escapeHtml(op.table)}</td>
-            <td>${escapeHtml(op.confidence || "-")}</td>
+            ${showNode ? "<th>Node</th>" : ""}
+            ${showUsage ? "<th>Usage</th>" : ""}
+            <th>Source</th>
+            <th>Operation</th>
+            <th>Table / Root</th>
+            <th>Confidence</th>
+            ${showVia ? "<th>Via</th>" : ""}
           </tr>
-        `,
-          )
-          .join("")}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          ${ops
+            .map(
+              (op) => `
+            <tr class="${op.indirect ? "operation-row-indirect" : ""}">
+              ${showNode ? `<td>${escapeHtml(op.nodeId)}</td>` : ""}
+              ${showUsage ? `<td>${renderOperationUsage(op)}</td>` : ""}
+              <td>${escapeHtml(op.source)}</td>
+              <td>${escapeHtml(op.operation)}</td>
+              <td>${escapeHtml(op.table)}</td>
+              <td>${escapeHtml(op.confidence || "-")}</td>
+              ${showVia ? `<td>${renderOperationVia(op)}</td>` : ""}
+            </tr>
+          `,
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderOperationUsage(op) {
+  return op.indirect
+    ? '<span class="op-usage-badge indirect">Indirect</span>'
+    : '<span class="op-usage-badge direct">Direct</span>';
+}
+
+function renderOperationVia(op) {
+  if (!op.indirect) return '<span class="muted">-</span>';
+  const sourceNode = op.sourceNodeId ? ` / ${op.sourceNodeId}` : "";
+  return `
+    <div class="operation-via">
+      <span>${escapeHtml(op.viaNode || op.nodeId || "node")}</span>
+      <span class="muted">-&gt;</span>
+      <span>${escapeHtml(op.viaWorkflow || op.sourceWorkflow || "called workflow")}</span>
+      ${sourceNode ? `<small class="muted">${escapeHtml(sourceNode)}</small>` : ""}
+    </div>
   `;
 }
 
@@ -5389,9 +5807,9 @@ function extractAndEvaluateVariables(script, stepInput, stepOutput, processConte
       const stepName = parts[1].toLowerCase();
       const remainingPath = parts.slice(2);
 
-      const matchedStep = executedSteps.find(step => {
+      const matchedStep = [...executedSteps].reverse().find(step => {
         const name = step.Name || step.StepName || step.ActivityName || step.NodeName || "";
-        return name.toLowerCase() === stepName;
+        return String(name).toLowerCase() === stepName;
       });
 
       if (matchedStep) {
@@ -5673,7 +6091,9 @@ function renderLiveExecDetail(workflow) {
 
       const logicHtml = `<pre style="margin: 0; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid var(--line); border-radius: 4px; font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; color: var(--text);">${escapeHtml(node.conditionScript)}</pre>`;
 
-      const evaluatedVars = extractAndEvaluateVariables(node.conditionScript, inputJson, outputJson, processContext, steps);
+      const currentStepIndex = steps.findIndex(s => s === step);
+      const previousSteps = currentStepIndex >= 0 ? steps.slice(0, currentStepIndex) : steps;
+      const evaluatedVars = extractAndEvaluateVariables(node.conditionScript, inputJson, outputJson, processContext, previousSteps);
       let varsHtml = "";
       if (evaluatedVars) {
         let rows = "";
@@ -5696,7 +6116,7 @@ function renderLiveExecDetail(workflow) {
           <div style="margin-top: 10px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
               <strong style="font-size: 11px; color: var(--text-muted);">Variable Values:</strong>
-              <span style="font-size: 10px; color: var(--text-muted); opacity: 0.8;" title="Intermediate snapshots are not present in this trace. Values represent the final state at the end of the workflow.">ℹ️ Process End State</span>
+              <span style="font-size: 10px; color: var(--text-muted); opacity: 0.8;" title="Step references use the latest matching executed step before this condition run.">ℹ️ Previous Step State</span>
             </div>
             <div style="background: rgba(255,255,255,0.01); border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px;">
               ${rows}
