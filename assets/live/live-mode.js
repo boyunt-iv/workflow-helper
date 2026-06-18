@@ -1988,7 +1988,7 @@
         }
       } else if (activeTab === "db") {
         const staticWf = findWorkflowByName((st.ctx && st.ctx.state && st.ctx.state.workflows) || [], n.workflowName);
-        const dbOps = (staticWf && staticWf.dbOperations) || [];
+        const dbOps = staticWf ? getWorkflowSearchOperations(staticWf) : [];
         const steps = getSteps(n);
 
         const parsedSteps = steps.map((step, idx) => {
@@ -2006,17 +2006,17 @@
           if (opNodeId) {
             matchedStep = parsedSteps.find(s =>
               String(s.nodeId || "").toLowerCase() === opNodeId ||
-              String(s.stepName || "").toLowerCase() === opNodeId ||
-              opNodeId.includes(String(s.stepName || "").toLowerCase()) ||
-              String(s.stepName || "").toLowerCase().includes(opNodeId)
+              String(s.stepName || "").toLowerCase() === opNodeId
             );
           }
-          matchedOps.push({
-            op,
-            stepNo: matchedStep ? matchedStep.stepNo : null,
-            stepName: matchedStep ? matchedStep.stepName : op.nodeId || "(unknown)",
-            order: matchedStep ? matchedStep.stepNo : 99999
-          });
+          if (matchedStep) {
+            matchedOps.push({
+              op,
+              stepNo: matchedStep.stepNo,
+              stepName: matchedStep.stepName,
+              order: matchedStep.stepNo
+            });
+          }
         });
 
         matchedOps.sort((a, b) => a.order - b.order);
@@ -2037,12 +2037,27 @@
             const badgeHtml = `<span class="${badgeClass}" style="font-weight:600;">${escapeHtml(opStr)}</span>`;
             const tableLink = `<a href="#" onclick="window.jumpToDbTable('${escapeHtml(mo.op.table)}'); return false;" class="workflow-link" style="font-family:monospace; font-weight:600;">${escapeHtml(mo.op.table)}</a>`;
 
+            const usageBadge = mo.op.indirect
+              ? `<span style="color:#4f46e5; font-weight:bold; cursor:help; margin-right:4px;" title="Indirect via: ${escapeHtml(mo.op.sourceWorkflow || mo.op.viaWorkflow)} Node:${escapeHtml(mo.op.sourceNodeId || mo.op.viaNode)}">&#8618;</span>`
+              : "";
+            const executedInHtml = mo.op.indirect
+              ? `<div style="display:flex; flex-direction:column; line-height:1.2;">
+                   <span class="dim">${escapeHtml(mo.stepName)}</span>
+                   <span style="font-size:10px; color:#4f46e5;" title="Indirect via: ${escapeHtml(mo.op.sourceWorkflow || mo.op.viaWorkflow)} Node:${escapeHtml(mo.op.sourceNodeId || mo.op.viaNode)}">&nbsp;&#8618;&nbsp;${escapeHtml(mo.op.sourceWorkflow || mo.op.viaWorkflow)}</span>
+                 </div>`
+              : `<span class="dim">${escapeHtml(mo.stepName)}</span>`;
+
             rowsHtml += `
               <tr style="border-bottom: 1px solid var(--line); font-size:11px;">
                 <td style="padding:8px 4px; text-align:center;">${stepNoText}</td>
-                <td style="padding:8px 4px;">${tableLink}</td>
+                <td style="padding:8px 4px;">
+                  <div style="display:flex; align-items:center; gap:4px;">
+                    ${usageBadge}
+                    ${tableLink}
+                  </div>
+                </td>
                 <td style="padding:8px 4px;">${badgeHtml}</td>
-                <td style="padding:8px 4px;" class="dim">${escapeHtml(mo.stepName)}</td>
+                <td style="padding:8px 4px;">${executedInHtml}</td>
               </tr>`;
           });
 
@@ -2071,7 +2086,7 @@
           tabContentHtml = '<div class="empty-state" style="padding:40px 20px; text-align:center;">ไม่มีข้อมูล</div>';
         } else {
           const staticWf = findWorkflowByName((st.ctx && st.ctx.state && st.ctx.state.workflows) || [], n.workflowName);
-          const dbOps = (staticWf && staticWf.dbOperations) || [];
+          const dbOps = staticWf ? getWorkflowSearchOperations(staticWf) : [];
           const stepDbMap = new Map();
 
           const parsedSteps = steps.map((step, idx) => {
@@ -2094,9 +2109,7 @@
             if (opNodeId) {
               const matchedStep = parsedSteps.find(s =>
                 String(s.nodeId || "").toLowerCase() === opNodeId ||
-                String(s.stepName || "").toLowerCase() === opNodeId ||
-                opNodeId.includes(String(s.stepName || "").toLowerCase()) ||
-                String(s.stepName || "").toLowerCase().includes(opNodeId)
+                String(s.stepName || "").toLowerCase() === opNodeId
               );
               if (matchedStep) {
                 if (!stepDbMap.has(matchedStep.stepNo)) {
@@ -2108,6 +2121,7 @@
           });
 
           const reversedSteps = [...parsedSteps].reverse();
+          const opOrder = { select: 0, insert: 1, update: 2, upsert: 3, delete: 4 };
 
           const rowsHtml = reversedSteps.map(s => {
             const durText = s.duration != null ? L().formatDuration(s.duration) : "0ms";
@@ -2119,7 +2133,27 @@
             let dbInfoHtml = "";
             if (st.showDbInterventions && stepDbMap.has(s.stepNo)) {
               const ops = stepDbMap.get(s.stepNo);
-              const chips = ops.map(op => {
+              // Deduplicate based on: table + operation + indirect
+              const seenOps = new Set();
+              const uniqueOps = [];
+              ops.forEach(op => {
+                const key = `${op.table}|${op.operation}|${!!op.indirect}`;
+                if (!seenOps.has(key)) {
+                  seenOps.add(key);
+                  uniqueOps.push(op);
+                }
+              });
+
+              // Sort uniqueOps by: Table (ASC) -> Operation
+              uniqueOps.sort((a, b) => {
+                const tblComp = (a.table || "").localeCompare(b.table || "");
+                if (tblComp !== 0) return tblComp;
+                const opA = opOrder[String(a.operation || "").toLowerCase()] ?? 100;
+                const opB = opOrder[String(b.operation || "").toLowerCase()] ?? 100;
+                return opA - opB;
+              });
+
+              const chips = uniqueOps.map(op => {
                 const opStr = String(op.operation || "").toUpperCase();
                 let badgeClass = "badge";
                 if (opStr === "SELECT") badgeClass = "badge accent";
@@ -2127,7 +2161,11 @@
                 else if (opStr === "UPDATE" || opStr === "UPSERT") badgeClass = "badge warning";
                 else if (opStr === "DELETE") badgeClass = "badge danger";
 
-                return `<span style="display:inline-flex; align-items:center; gap:4px; margin-right:8px; font-size:10px; background:rgba(255,255,255,0.03); padding:2px 6px; border-radius:4px; border: 1px solid rgba(255,255,255,0.05); margin-top:2px;">
+                const indirectIndicator = op.indirect ? `<span style="color:#4f46e5; font-weight:bold; margin-right:2px;" title="Indirect usage">&#8618;</span>` : "";
+                const titleText = op.indirect ? `Indirect via ${op.sourceWorkflow || op.viaWorkflow || ""} Node:${op.sourceNodeId || op.viaNode || ""}` : "Direct";
+
+                return `<span title="${escapeHtml(titleText)}" style="display:inline-flex; align-items:center; gap:4px; margin-right:8px; font-size:10px; background:rgba(255,255,255,0.03); padding:2px 6px; border-radius:4px; border: 1px solid rgba(255,255,255,0.05); margin-top:2px; cursor:help;">
+                  ${indirectIndicator}
                   <span onclick="window.jumpToDbTable('${escapeHtml(op.table)}'); event.stopPropagation(); return false;" style="font-family:monospace; font-weight:600; cursor:pointer; color:#3b82f6; text-decoration:underline;">${escapeHtml(op.table)}</span>
                   <span class="${badgeClass}" style="font-size:9px; padding:1px 3px; font-weight:bold;">${escapeHtml(opStr)}</span>
                 </span>`;
@@ -3009,23 +3047,28 @@
 
     // Build DB Table links if any
     let dbLinksHtml = "";
-    const tableOpsMap = new Map();
+    const tableOpsMap = new Map(); // table -> { ops: Set, indirect: boolean, details: Set }
 
     // Check static mappings if we have a table match or custom query
     const staticWf = staticWorkflow || findWorkflowByName((st.ctx && st.ctx.state && st.ctx.state.workflows) || [], selectedProcessNode && selectedProcessNode.workflowName);
-    const dbOps = (staticWf && staticWf.dbOperations) || [];
+    const dbOps = staticWf ? getWorkflowSearchOperations(staticWf) : [];
     const nodeId = step.ActivityId || step.StepId || step.NodeId || step.ActivityName || stepName;
     const nodeIdLower = String(nodeId || "").toLowerCase();
 
     dbOps.forEach(op => {
       const opNodeId = String(op.nodeId || "").toLowerCase();
-      if (opNodeId && (opNodeId === nodeIdLower || opNodeId.includes(nodeIdLower) || nodeIdLower.includes(opNodeId))) {
+      if (opNodeId && (opNodeId === nodeIdLower)) {
         if (op.table) {
           if (!tableOpsMap.has(op.table)) {
-            tableOpsMap.set(op.table, new Set());
+            tableOpsMap.set(op.table, { ops: new Set(), indirect: false, details: new Set() });
           }
+          const entry = tableOpsMap.get(op.table);
           if (op.operation) {
-            tableOpsMap.get(op.table).add(op.operation.toUpperCase());
+            entry.ops.add(op.operation.toUpperCase());
+          }
+          if (op.indirect) {
+            entry.indirect = true;
+            entry.details.add(`via ${op.sourceWorkflow || op.viaWorkflow || ""} Node:${op.sourceNodeId || op.viaNode || ""}`);
           }
         }
       }
@@ -3037,7 +3080,7 @@
         if (typeof v === "string" && (k.toLowerCase().includes("table") || k.toLowerCase().includes("schema"))) {
           if (st.ctx.state.dbTables.some(t => t.name === v)) {
             if (!tableOpsMap.has(v)) {
-              tableOpsMap.set(v, new Set());
+              tableOpsMap.set(v, { ops: new Set(), indirect: false, details: new Set() });
             }
           }
         }
@@ -3045,10 +3088,11 @@
     }
 
     if (tableOpsMap.size > 0) {
-      dbLinksHtml = [...tableOpsMap.entries()].map(([tbl, opsSet]) => {
-        const opsList = [...opsSet].sort();
+      dbLinksHtml = [...tableOpsMap.entries()].map(([tbl, entry]) => {
+        const opsList = [...entry.ops].sort();
         const opsSuffix = opsList.length > 0 ? ` [${opsList.join(", ")}]` : "";
-        return `<a href="#" onclick="window.jumpToDbTable('${escapeHtml(tbl)}'); document.getElementById('liveStepModal').classList.remove('active'); return false;" class="live-modal-nav-btn" style="text-decoration:none; display:inline-block;">Table: ${escapeHtml(tbl)}${escapeHtml(opsSuffix)} 💾</a>`;
+        const indirectMarker = entry.indirect ? `<span style="color:#4f46e5; font-weight:bold; margin-right:2px;" title="Indirect via: ${escapeHtml([...entry.details].join(' | '))}">&#8618;</span>` : "";
+        return `<a href="#" onclick="window.jumpToDbTable('${escapeHtml(tbl)}'); document.getElementById('liveStepModal').classList.remove('active'); return false;" class="live-modal-nav-btn" style="text-decoration:none; display:inline-flex; align-items:center; gap:2px;" title="${entry.indirect ? `Indirect via: ${escapeHtml([...entry.details].join(' | '))}` : 'Direct usage'}">${indirectMarker}Table: ${escapeHtml(tbl)}${escapeHtml(opsSuffix)} 💾</a>`;
       }).join(" ");
     }
 
@@ -3058,7 +3102,7 @@
     const gqlOps = (staticWf && staticWf.graphqlOperations) || [];
     gqlOps.forEach(op => {
       const opNodeId = String(op.nodeId || "").toLowerCase();
-      if (opNodeId && (opNodeId === nodeIdLower || opNodeId.includes(nodeIdLower) || nodeIdLower.includes(opNodeId))) {
+      if (opNodeId && (opNodeId === nodeIdLower)) {
         if (op.operationName && !resolvedGqlNames.includes(op.operationName)) {
           resolvedGqlNames.push(op.operationName);
         }
