@@ -108,7 +108,7 @@
         <div id="indexStatus" class="index-status">Loading index...</div>
         <div class="app-version">
           <span>Web version</span>
-          <strong>v0.5.21</strong>
+          <strong>v0.5.28</strong>
         </div>
         <div style="display: flex; gap: 8px; margin-top: 8px; width: 100%;">
           <button id="lockIndexButton" class="rebuild-button" type="button" style="flex: 0 0 32px; width: 32px; padding: 0; display: flex; align-items: center; justify-content: center; background: rgba(239, 68, 68, 0.1); color: #ef4444; border-color: rgba(239, 68, 68, 0.3);" title="Lock Session">
@@ -140,6 +140,7 @@
         <select id="searchScope" aria-label="Search scope">
           <option value="all">All (except Code)</option>
           <option value="workflow">Workflow</option>
+          <option value="workflowIndirect">Workflow (Include Indirect)</option>
           <option value="zbo">ZBO</option>
           <option value="parameter">Parameter</option>
           <option value="field">Field</option>
@@ -171,16 +172,22 @@
               <button class="db-submode-btn" type="button" data-db-submode="triggers">Triggers</button>
             </div>
             <div
-              style="display: flex; justify-content: space-between; align-items: center; width: 100%; margin-top: 8px;">
+              style="display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; margin-top: 8px;">
               <span id="resultCount">0</span>
-              <button id="copyListButton" class="btn-copy-list" type="button" title="Copy results list to clipboard">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                  stroke-linecap="round" stroke-linejoin="round"
-                  style="margin-right: 4px; display: inline-block; vertical-align: middle;">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                </svg>Copy List
-              </button>
+              <div class="result-actions">
+                <label id="resultTableUsageToggleContainer" class="result-toggle" title="Show table usage in workflow result cards">
+                  <input id="toggleResultTableUsage" type="checkbox" checked />
+                  <span>Tables</span>
+                </label>
+                <button id="copyListButton" class="btn-copy-list" type="button" title="Copy results list to clipboard">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round"
+                    style="margin-right: 4px; display: inline-block; vertical-align: middle;">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>Copy List
+                </button>
+              </div>
             </div>
           </div>
           <div id="resultsList" class="results-list"></div>
