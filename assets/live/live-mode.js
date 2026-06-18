@@ -29,13 +29,46 @@
   let activeAutoFetches = 0;
   let loadingActive = false;
   const jsonPayloads = new Map();
+  const pendingTimeouts = new Map();
+
+  function registerRequestTimeout(reqId) {
+    const tid = setTimeout(() => {
+      pendingTimeouts.delete(reqId);
+      if (reqId.startsWith("user_detail_")) {
+        const prefixLen = "user_detail_".length;
+        const lastUnderscore = reqId.lastIndexOf("_");
+        const rid = reqId.substring(prefixLen, lastUnderscore);
+        if (st.loadingDetailId === rid) {
+          st.loadingDetailId = null;
+          st.detailError = "Error: Request timed out";
+          renderDetail();
+        }
+      } else {
+        if (!st.stopRequested && activeAutoFetches > 0) {
+          console.warn(`Request ${reqId} timed out.`);
+          stopFetching();
+          setBridge("error: request timeout", false);
+          window.alert("Live API request timed out. Please verify that the Zoral portal tab is open, and that you have clicked the Workflow Helper Bridge bookmarklet.");
+        }
+      }
+    }, 15000); // 15 seconds
+    pendingTimeouts.set(reqId, tid);
+  }
+
+  function clearAllTimeouts() {
+    for (const tid of pendingTimeouts.values()) {
+      clearTimeout(tid);
+    }
+    pendingTimeouts.clear();
+  }
+
   const TRACE_ENCRYPTION_FORMAT = "workflow-helper-encrypted-trace";
   const TRACE_ENCRYPTION_VERSION = 1;
   const TRACE_KDF_ITERATIONS = 310000;
   const jsonSearchStates = new Map();
   // Requested direct-list page size. The *effective* size (st.effPageSize) is
   // captured from page 1 in case the server caps it below this value.
-  const DIRECT_PAGE_SIZE = 25;
+  const DIRECT_PAGE_SIZE = 30;
   // Page size for expand-down (children/sibling) queries. These ARE paginated
   // now (see fetchChildPage + the isChild handler) so parents with many children
   // are fetched completely, not capped at one page.
@@ -61,6 +94,7 @@
 
     const { url, reqId } = requestQueue.shift();
     st.bridgeWin.postMessage({ type: "BRIDGE_FETCH", reqId, url }, "*");
+    registerRequestTimeout(reqId);
 
     // Add 100ms delay between consecutive requests
     queueTimer = setTimeout(() => {
@@ -301,6 +335,7 @@
       clearTimeout(queueTimer);
       queueTimer = null;
     }
+    clearAllTimeouts();
     updateLoadingState();
   }
 
@@ -1430,7 +1465,9 @@
           st.loadingDetailId = st.selected;
           st.detailError = null;
           const url = env.msBase + "/runtime/api/report/process/" + st.selected;
-          st.bridgeWin.postMessage({ type: "BRIDGE_FETCH", reqId: "user_detail_" + st.selected + "_" + Date.now(), url }, "*");
+          const reqId = "user_detail_" + st.selected + "_" + Date.now();
+          st.bridgeWin.postMessage({ type: "BRIDGE_FETCH", reqId, url }, "*");
+          registerRequestTimeout(reqId);
         }
       }
     }
@@ -2349,10 +2386,8 @@
     pushProgressSegment("Page " + page);
     const url = L().buildProcessUrl(env.msBase, Object.assign({ pageIndex: page, pageSize: DIRECT_PAGE_SIZE }, queryOpts));
 
-    st.bridgeWin.postMessage({ type: "BRIDGE_FETCH", reqId: "mainpage_" + page + "_" + Date.now(), url }, "*");
-    setBridge("fetching… ⟳", true);
-    enableButtons(false);
-    renderPaginationControls();
+    const reqId = "mainpage_" + page + "_" + Date.now();
+    addToQueue(url, reqId);
   }
 
   window.addEventListener("message", (ev) => {
@@ -2369,6 +2404,13 @@
       setBridge("connected", true);
     }
     else if (m.type === "BRIDGE_RESULT") {
+      if (m.reqId) {
+        const tid = pendingTimeouts.get(m.reqId);
+        if (tid) {
+          clearTimeout(tid);
+          pendingTimeouts.delete(m.reqId);
+        }
+      }
       const isDirectPage = m.reqId && m.reqId.startsWith("mainpage_");
       const isChild = m.reqId && m.reqId.startsWith("child_");
       const isDetail = m.reqId && m.reqId.startsWith("detail_");
