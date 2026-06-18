@@ -2697,20 +2697,34 @@
       : null;
   }
 
-  function getStepDecisionMatrixNode(step) {
+  function parseStepPayloadValue(val) {
+    if (val === null || val === undefined) return null;
+    if (typeof val === "string") {
+      try {
+        return JSON.parse(val);
+      } catch (_) {
+        return val;
+      }
+    }
+    return val;
+  }
+
+  function getStepStaticContext(step) {
     const workflows = (st.ctx && st.ctx.state && st.ctx.state.workflows) || [];
-    if (!workflows.length || !st.graph || !st.selected || !step) return null;
+    if (!workflows.length || !st.graph || !st.selected || !step) return { workflow: null, node: null, candidateNames: [] };
 
     const processNode = st.graph.byId.get(st.selected);
     const staticWorkflow = findWorkflowByName(workflows, processNode && processNode.workflowName);
     const stepName = step.Name || step.StepName || step.ActivityName || step.NodeName || "";
     const stepNodeId = step.ActivityId || step.StepId || step.NodeId || step.ActivityName || stepName;
+    const parsedInput = parseStepPayloadValue(step.InputJson || step.Input || step.Variables || step.WorkflowInputJson || step.workflowInputJson);
     const candidateNames = [
       stepNodeId,
       stepName,
       step.ReferenceName,
       step.NextItemName,
       step.ChildRequestType,
+      parsedInput && typeof parsedInput === "object" ? parsedInput.workflowName : null,
     ].filter(Boolean);
 
     if (staticWorkflow && Array.isArray(staticWorkflow.nodes)) {
@@ -2721,12 +2735,24 @@
           normalizeName(node.name) === candidate ||
           normalizeName(node.callName) === candidate
         );
-        if (staticNode && staticNode.decisionMatrix) return staticNode;
-        if (staticNode && staticNode.callName) candidateNames.push(staticNode.callName);
+        if (staticNode) {
+          if (staticNode.callName && !candidateNames.includes(staticNode.callName)) {
+            candidateNames.push(staticNode.callName);
+          }
+          return { workflow: staticWorkflow, node: staticNode, candidateNames };
+        }
       }
     }
 
-    for (const candidateName of candidateNames) {
+    return { workflow: staticWorkflow, node: null, candidateNames };
+  }
+
+  function getStepDecisionMatrixNode(step) {
+    const workflows = (st.ctx && st.ctx.state && st.ctx.state.workflows) || [];
+    const staticContext = getStepStaticContext(step);
+    if (staticContext.node && staticContext.node.decisionMatrix) return staticContext.node;
+
+    for (const candidateName of staticContext.candidateNames || []) {
       const decisionWorkflow = findWorkflowByName(workflows, candidateName);
       const decisionNode = findDecisionMatrixNodeInWorkflow(decisionWorkflow);
       if (decisionNode) return decisionNode;
@@ -2735,12 +2761,183 @@
     return null;
   }
 
+  function renderStepScriptHtml(staticNode) {
+    if (!staticNode) return "";
+    const sections = [
+      ["Condition / Rules", staticNode.conditionScript],
+      ["Input Script", staticNode.inputScript],
+      ["Output Script", staticNode.outputScript],
+    ].filter(([, code]) => code);
+    if (!sections.length) return "";
+    return `
+      <div class="live-modal-script-block">
+        <div class="live-modal-section-title">Zoral Node Script</div>
+        ${sections.map(([title, code]) => `
+          <div class="live-modal-code-section">
+            <div class="live-modal-code-title">${escapeHtml(title)}</div>
+            <pre class="code-block">${escapeHtml(code)}</pre>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function findKeyValueRecursive(obj, searchKey) {
+    if (obj === null || obj === undefined || typeof obj !== "object") return undefined;
+    const keyLower = String(searchKey || "").toLowerCase();
+    for (const k of Object.keys(obj)) {
+      if (k.toLowerCase() === keyLower) return obj[k];
+    }
+    const values = Array.isArray(obj) ? obj : Object.values(obj);
+    for (const value of values) {
+      const found = findKeyValueRecursive(value, searchKey);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+
+  function extractStepConditionVariables(script, stepInput, stepOutput, processContext, executedSteps = []) {
+    if (!script) return null;
+    const matches = script.match(/\b(input|globalVariables|global|variables|context|data|steps)(\.[a-zA-Z0-9_$]+|\?\.[a-zA-Z0-9_$]+|\[['"]?[a-zA-Z0-9_$]+['"]?\]|\?\.\[['"]?[a-zA-Z0-9_$]+['"]?\])*/gi) || [];
+    const results = {};
+    const searchPayloads = [
+      stepInput,
+      stepOutput,
+      processContext?.globalVariables,
+      processContext?.workflowInput,
+    ].filter((payload) => payload !== null && payload !== undefined);
+
+    const lookupValue = (path) => {
+      const normalizedPath = String(path || "").replaceAll(/\[['"]?([a-zA-Z0-9_$]+)['"]?\]/g, ".$1");
+      const parts = normalizedPath.split(/\??\./);
+      const prefixes = ["input", "globalvariables", "global", "variables", "context", "data"];
+
+      if (parts.length > 1 && parts[0].toLowerCase() === "steps") {
+        const stepName = parts[1].toLowerCase();
+        const remainingPath = parts.slice(2);
+        const matchedStep = [...executedSteps].reverse().find((candidateStep) => {
+          const name = candidateStep.Name || candidateStep.StepName || candidateStep.ActivityName || candidateStep.NodeName || "";
+          return String(name).toLowerCase() === stepName;
+        });
+        if (!matchedStep) return undefined;
+        let current = parseStepPayloadValue(matchedStep.OutputJson || matchedStep.Output || matchedStep.Result || matchedStep.WorkflowOutputJson || matchedStep.workflowOutputJson);
+        for (const part of remainingPath) {
+          if (current && typeof current === "object" && part in current) {
+            current = current[part];
+          } else {
+            return undefined;
+          }
+        }
+        return current;
+      }
+
+      let keyPath = parts;
+      if (parts.length > 1 && prefixes.includes(parts[0].toLowerCase())) {
+        keyPath = parts.slice(1);
+      }
+      for (const payload of searchPayloads) {
+        let current = payload;
+        let found = true;
+        for (const part of keyPath) {
+          if (current && typeof current === "object" && part in current) {
+            current = current[part];
+          } else {
+            found = false;
+            break;
+          }
+        }
+        if (found) return current;
+      }
+      const searchKey = keyPath[keyPath.length - 1];
+      for (const payload of searchPayloads) {
+        const foundVal = findKeyValueRecursive(payload, searchKey);
+        if (foundVal !== undefined) return foundVal;
+      }
+      return undefined;
+    };
+
+    [...new Set(matches)].forEach((path) => {
+      const value = lookupValue(path);
+      if (value !== undefined) results[path] = value;
+    });
+    return Object.keys(results).length ? results : null;
+  }
+
+  function findStepExecutedBranch(staticNode, step, staticWorkflow, stepsList) {
+    if (!staticNode || !staticWorkflow || !Array.isArray(stepsList)) return null;
+    const currentIdx = stepsList.findIndex((item) => item === step);
+    if (currentIdx < 0 || currentIdx >= stepsList.length - 1) return null;
+    const nextStep = stepsList[currentIdx + 1];
+    const nextStepName = nextStep.Name || nextStep.StepName || nextStep.ActivityName || nextStep.NodeName;
+    const nextStepId = nextStep.ActivityId || nextStep.StepId || nextStep.NodeId;
+    const outgoingEdges = (staticWorkflow.edges || []).filter((edge) => edge.from === staticNode.id);
+    for (const edge of outgoingEdges) {
+      const targetNode = (staticWorkflow.nodes || []).find((node) => node.id === edge.to);
+      if (!targetNode) continue;
+      const targetId = normalizeName(targetNode.id);
+      const targetCall = normalizeName(targetNode.callName);
+      const nextName = normalizeName(nextStepName);
+      const nextId = normalizeName(nextStepId);
+      if (targetId === nextId || targetId === nextName || (targetCall && targetCall === nextId) || (targetCall && targetCall === nextName)) {
+        return { label: edge.label || (edge.condition ? "If" : "Else"), target: targetNode.id };
+      }
+    }
+    return null;
+  }
+
+  function renderStepConditionEvaluationHtml(staticNode, staticWorkflow, step, stepsList, inputJson, outputJson, processContext) {
+    if (!staticNode || !staticNode.conditionScript) return "";
+    const executedBranch = findStepExecutedBranch(staticNode, step, staticWorkflow, stepsList);
+    const currentStepIndex = Array.isArray(stepsList) ? stepsList.findIndex((item) => item === step) : -1;
+    const previousSteps = currentStepIndex >= 0 ? stepsList.slice(0, currentStepIndex) : stepsList;
+    const evaluatedVars = extractStepConditionVariables(staticNode.conditionScript, inputJson, outputJson, processContext, previousSteps || []);
+    const branchStyle = executedBranch && String(executedBranch.label || "").toLowerCase() !== "else"
+      ? "background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);"
+      : "background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3);";
+    const branchHtml = executedBranch
+      ? `<span style="padding:2px 6px; border-radius:4px; font-weight:700; font-size:11px; ${branchStyle}">${escapeHtml(executedBranch.label)} &rarr; ${escapeHtml(executedBranch.target)}</span>`
+      : `<span class="dim" style="font-size:11px;">(Unknown / End of flow)</span>`;
+    const varsRows = evaluatedVars
+      ? Object.entries(evaluatedVars).map(([key, value]) => {
+          let valText;
+          if (value && typeof value === "object") {
+            const str = JSON.stringify(value);
+            valText = str.length > 60 ? (Array.isArray(value) ? `[... ${value.length} items]` : `{... ${Object.keys(value).length} keys}`) : str;
+          } else {
+            valText = String(value);
+          }
+          return `
+            <div class="live-condition-var-row">
+              <span>${escapeHtml(key)}</span>
+              <strong>${escapeHtml(valText)}</strong>
+            </div>
+          `;
+        }).join("")
+      : `<div class="dim" style="font-size:11px;">(No variables could be extracted/evaluated from current payloads)</div>`;
+
+    return `
+      <div class="live-modal-condition-block">
+        <div class="live-condition-header">
+          <strong>Condition Evaluation Details</strong>
+          <span>Branch Taken: ${branchHtml}</span>
+        </div>
+        <div class="live-modal-code-title">Expression / Logic:</div>
+        <pre class="code-block">${escapeHtml(staticNode.conditionScript)}</pre>
+        <div class="live-condition-vars-title">
+          <strong>Variable Values:</strong>
+          <span title="Step references use the latest matching executed step before this condition run.">Previous Step State</span>
+        </div>
+        <div class="live-condition-vars">${varsRows}</div>
+      </div>
+    `;
+  }
+
   function renderStepDecisionMatrixHtml(step, inputJson, outputJson) {
     if (typeof window.renderDecisionMatrix !== "function") return "";
     const matrixNode = getStepDecisionMatrixNode(step);
     if (!matrixNode || !matrixNode.decisionMatrix) return "";
     return `
-      <div style="margin-top:16px;">
+      <div class="live-modal-decision-matrix" style="margin-top:16px;">
         <div style="font-weight:600; font-size:11px; color:var(--accent); margin-bottom:8px;">Matched Decision Matrix:</div>
         ${window.renderDecisionMatrix(matrixNode, outputJson, inputJson)}
       </div>
@@ -2786,6 +2983,11 @@
 
     const inputJson = getPayloadObj(step.InputJson || step.Input || step.Variables || step.WorkflowInputJson || step.workflowInputJson);
     const outputJson = getPayloadObj(step.OutputJson || step.Output || step.Result || step.WorkflowOutputJson || step.workflowOutputJson);
+    const selectedProcessNode = st.graph && st.selected ? st.graph.byId.get(st.selected) : null;
+    const processContext = P().getProcessContext ? P().getProcessContext(selectedProcessNode) : null;
+    const staticContext = getStepStaticContext(step);
+    const staticNode = staticContext.node;
+    const staticWorkflow = staticContext.workflow;
 
     const stepName = step.Name || step.StepName || step.ActivityName || step.NodeName || "(unnamed step)";
     const stepType = step.Type || step.StepType || step.ActivityType || step.NodeType || "Task";
@@ -2810,8 +3012,7 @@
     const tableOpsMap = new Map();
 
     // Check static mappings if we have a table match or custom query
-    const selectedProcess = st.graph && st.selected ? st.graph.byId.get(st.selected) : null;
-    const staticWf = findWorkflowByName((st.ctx && st.ctx.state && st.ctx.state.workflows) || [], selectedProcess && selectedProcess.workflowName);
+    const staticWf = staticWorkflow || findWorkflowByName((st.ctx && st.ctx.state && st.ctx.state.workflows) || [], selectedProcessNode && selectedProcessNode.workflowName);
     const dbOps = (staticWf && staticWf.dbOperations) || [];
     const nodeId = step.ActivityId || step.StepId || step.NodeId || step.ActivityName || stepName;
     const nodeIdLower = String(nodeId || "").toLowerCase();
@@ -2909,6 +3110,8 @@
     // Flat / deep diffing
     const diffHtml = renderPayloadDiff(inputJson, outputJson);
     const decisionMatrixHtml = renderStepDecisionMatrixHtml(step, inputJson, outputJson);
+    const conditionEvaluationHtml = renderStepConditionEvaluationHtml(staticNode, staticWorkflow, step, stepsList, inputJson, outputJson, processContext);
+    const staticScriptHtml = renderStepScriptHtml(staticNode);
 
     modal.innerHTML = `
       <div class="live-modal-card">
@@ -2943,6 +3146,8 @@
           </div>
           
           ${diagnosticsHtml}
+          ${conditionEvaluationHtml}
+          ${staticScriptHtml}
           
           ${tabsHtml}
           
