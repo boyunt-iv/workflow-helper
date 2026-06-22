@@ -561,7 +561,7 @@ function applyModeState() {
   const isZbo = state.activeMode === "zbo";
 
   if (els.resultTableUsageToggleContainer) {
-    els.resultTableUsageToggleContainer.style.display = isZoral ? "inline-flex" : "none";
+    els.resultTableUsageToggleContainer.style.display = (isZoral || isZbo) ? "inline-flex" : "none";
   }
   if (els.toggleDbBadges) {
     els.toggleDbBadges.parentElement.style.display = (isZoral || isZbo) ? "inline-flex" : "none";
@@ -1845,7 +1845,7 @@ function renderZboResultItem(area) {
         ${zoralCount ? `<span class="badge success">${zoralCount} Zoral calls</span>` : ""}
         ${dbCount ? `<span class="badge accent">${dbCount} DB/GQL</span>` : ""}
       </div>
-      ${renderZboResultDbOps(area)}
+      ${state.showResultTableUsage ? renderZboResultDbOps(area) : ""}
     </button>
   `;
 }
