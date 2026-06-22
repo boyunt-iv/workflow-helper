@@ -7249,7 +7249,13 @@ function renderTableCrudMap(table) {
     return Object.entries(opGroups)
       .sort(([left], [right]) => crudOperationRank(left) - crudOperationRank(right) || left.localeCompare(right))
       .map(([op, list]) => {
-        const links = list.map(c => `<div style="margin-bottom: 4px; display: block;">${renderCrudCallerLink(c, { small: true, compact: true })}</div>`).join("");
+        const links = list.map(c => {
+          let linkHtml = renderCrudCallerLink(c, { small: true, compact: true });
+          if (c.isTableLevel) {
+            linkHtml = `<span style="opacity: 0.75;" title="Table-level caller">${linkHtml}<span style="font-size: 9px; color: var(--muted); padding: 1px 3px; border: 1px dashed var(--line); border-radius: 3px; margin-left: 4px; font-weight: normal; vertical-align: middle; display: inline-block;">Table</span></span>`;
+          }
+          return `<div style="margin-bottom: 4px; display: block;">${linkHtml}</div>`;
+        }).join("");
         return `
           <div style="margin-bottom: 6px; display: flex; align-items: flex-start; gap: 4px;">
             <div style="flex-shrink: 0;">${renderCrudOpBadge(op)}</div>
@@ -7281,7 +7287,11 @@ function renderTableCrudMap(table) {
 
   if (state.crudView === "column") {
     const rows = table.columns.map(col => {
-      const colCallers = callers.filter(c => c.columns && c.columns.includes(col.name));
+      const tableLevelOps = callers.filter(c => !c.columns || c.columns.length === 0).map(c => ({ ...c, isTableLevel: true }));
+      const colCallers = [
+        ...callers.filter(c => c.columns && c.columns.includes(col.name)),
+        ...tableLevelOps
+      ];
       
       let callersListHtml = "";
       if (colCallers.length === 0) {
@@ -7373,19 +7383,82 @@ function renderTableCrudMap(table) {
       </table>
     `;
   } else {
-    const rowsHtml = callers.map(c => {
-      const callerLink = renderCrudCallerLink(c);
+    const grouped = [];
+    const seen = new Set();
+    for (const c of callers) {
+      const key = `${c.type}:${c.name}:${c.nodeId || c.actionLabel || c.triggerFunction || ""}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        grouped.push({
+          key,
+          caller: c,
+          items: [c],
+        });
+      } else {
+        const existing = grouped.find(g => g.key === key);
+        existing.items.push(c);
+      }
+    }
 
-      const colPills = c.columns.length ? c.columns.map(col => `<span class="badge" style="font-size:10px; padding:1px 5px; min-height:0; margin: 1px;">${escapeHtml(col)}</span>`).join("") : `<span class="muted" style="font-size:11px;">(table-level)</span>`;
-      const op = normalizeOperation(c.operation);
-      const opBadge = `<span class="db-op op-${escapeAttr(op)}" style="padding: 1px 6px; font-size:10px; line-height:1; min-height:0;">${escapeHtml(capitalizeWord(op))}</span>`;
+    const rowsHtml = grouped.map(g => {
+      const callerLink = renderCrudCallerLink(g.caller);
+      
+      const opGroups = {};
+      for (const item of g.items) {
+        const op = normalizeOperation(item.operation);
+        if (!opGroups[op]) {
+          opGroups[op] = {
+            columns: new Set(),
+            hasTableLevel: false
+          };
+        }
+        if (item.columns && item.columns.length > 0) {
+          for (const col of item.columns) {
+            opGroups[op].columns.add(col);
+          }
+        } else {
+          opGroups[op].hasTableLevel = true;
+        }
+      }
+
+      const sortedOps = Object.keys(opGroups).sort((left, right) =>
+        crudOperationRank(left) - crudOperationRank(right) || left.localeCompare(right)
+      );
+
+      const subRowsHtml = sortedOps.map((op, idx) => {
+        const opData = opGroups[op];
+        const colsArray = Array.from(opData.columns);
+        
+        let colPills = "";
+        if (colsArray.length > 0) {
+          colPills = colsArray.map(col => `<span class="badge" style="font-size:10px; padding:1px 5px; min-height:0; margin: 1px;">${escapeHtml(col)}</span>`).join("");
+          if (opData.hasTableLevel) {
+            colPills += `<span class="muted" style="font-size:11px; margin-left: 4px;">(and table-level)</span>`;
+          }
+        } else {
+          colPills = `<span class="muted" style="font-size:11px;">(table-level)</span>`;
+        }
+
+        const borderStyle = idx === sortedOps.length - 1 ? "" : "border-bottom: 1px solid var(--line-light);";
+
+        return `
+          <tr>
+            <td style="width: 90px; border: none; ${borderStyle} padding: 6px 12px; vertical-align: middle;">${renderCrudOpBadge(op)}</td>
+            <td style="border: none; ${borderStyle} padding: 6px 12px; vertical-align: middle;"><div style="display:flex; flex-wrap:wrap; align-items: center;">${colPills}</div></td>
+          </tr>
+        `;
+      }).join("");
 
       return `
         <tr>
-          <td>${callerLink}</td>
-          <td>${opBadge}</td>
-          <td><div style="display:flex; flex-wrap:wrap; max-width:240px;">${colPills}</div></td>
-          <td style="font-size:11px; color:var(--muted); max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeAttr(c.source)}">${escapeHtml(c.source.split("/").pop())}</td>
+          <td style="vertical-align: top; padding: 6px 12px;">${callerLink}</td>
+          <td colspan="2" style="padding: 0; vertical-align: top;">
+            <table style="width: 100%; border-collapse: collapse; border: none; margin: 0; background: transparent;">
+              <tbody>
+                ${subRowsHtml}
+              </tbody>
+            </table>
+          </td>
         </tr>
       `;
     }).join("");
@@ -7395,9 +7468,8 @@ function renderTableCrudMap(table) {
         <thead>
           <tr>
             <th>Caller / Context</th>
-            <th>Op</th>
-            <th>Columns Touched</th>
-            <th>File</th>
+            <th style="width: 90px; padding-left: 12px;">Op</th>
+            <th style="padding-left: 12px;">Columns Touched</th>
           </tr>
         </thead>
         <tbody>
