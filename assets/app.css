@@ -1598,17 +1598,19 @@ body.diagram-panning {
 }
 
 .tabs {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  display: flex;
   min-height: 44px;
   border-bottom: 1px solid var(--line);
 }
 
 .tab {
+  flex: 1;
   border: 0;
   border-right: 1px solid var(--line);
   background: #ffffff;
   color: var(--muted);
+  text-align: center;
+  white-space: nowrap;
 }
 
 .tab:last-child {
@@ -2271,7 +2273,246 @@ body.index-locked > :not(.index-gate):not(script) {
   color: #15803d;
 }
 
+}
+
+@keyframes match-code-pulse {
+  0%, 100% { filter: drop-shadow(0 0 6px rgba(255, 143, 0, 0.85)) !important; }
+  50% { filter: drop-shadow(0 0 14px rgba(255, 143, 0, 1)) !important; }
+}
+
+/* Search-hit highlight inside artifact code (schema/grid/query/plugin) */
+.code-block mark.search-hit {
+  background: #ff8f00;
+  color: #0f172a;
+  border-radius: 2px;
+  padding: 0 1px;
+  font-weight: 700;
+}
+.artifact-details.artifact-hit {
+  box-shadow: 0 0 0 1px #ff8f00, 0 0 8px rgba(255, 143, 0, 0.45);
+}
+.artifact-code-wrap {
+  position: relative;
+}
+.artifact-code-wrap .code-block {
+  padding-top: 22px !important;
+}
+.artifact-copy-btn {
+  position: absolute;
+  top: 7px;
+  right: 10px;
+  z-index: 1;
+  border: 0;
+  background: rgba(15, 23, 42, 0.88);
+  color: #60a5fa;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 3px 5px;
+  border-radius: 4px;
+}
+.artifact-copy-btn:hover {
+  color: #bfdbfe;
+  text-decoration: underline;
+}
+.artifact-copy-btn:disabled {
+  cursor: default;
+  opacity: 0.75;
+  text-decoration: none;
+}
+:root {
+  --gate-bg: #eef3f8;
+}
+
+body.index-locked {
+  overflow: hidden;
+}
+
+body.index-locked > :not(.index-gate):not(script) {
+  visibility: hidden;
+}
+
+.index-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top left, rgba(37, 99, 235, 0.13), transparent 38%),
+    var(--gate-bg);
+}
+
+.index-gate[hidden] {
+  display: none;
+}
+
+.index-gate-card {
+  width: min(460px, 100%);
+  padding: 32px;
+  border: 1px solid #cbd5e1;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.18);
+}
+
+.index-gate-mark {
+  width: 44px;
+  height: 44px;
+}
+
+.index-gate-kicker {
+  margin: 18px 0 4px;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.index-gate h1 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 26px;
+}
+
+.index-gate-copy,
+.index-gate-note {
+  color: #64748b;
+  line-height: 1.55;
+}
+
+.index-gate-privacy {
+  display: grid;
+  gap: 4px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+  background: #f0fdf4;
+  color: #166534;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.index-gate-privacy strong {
+  color: #14532d;
+}
+
+.index-gate-field {
+  display: grid;
+  gap: 7px;
+  margin-top: 18px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.index-gate-field input {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background: #fff;
+  color: #0f172a;
+}
+
+.index-file-name {
+  margin-top: 7px;
+  color: #64748b;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.index-gate-remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0;
+  color: #475569;
+  font-size: 13px;
+}
+
+.index-unlock {
+  width: 100%;
+  min-height: 43px;
+  border: 0;
+  border-radius: 9px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.index-unlock:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.index-gate-status {
+  min-height: 20px;
+  margin-top: 12px;
+  color: #475569;
+  font-size: 13px;
+}
+
+.index-gate-status.error {
+  color: #b91c1c;
+}
+
+.index-gate-status.success {
+  color: #15803d;
+}
+
 .index-gate-note {
   margin: 12px 0 0;
   font-size: 11px;
+}
+
+/* Small spinner inside buttons */
+.spinner-small {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+/* SQL Code Blocks with Line Numbers */
+.sql-code-block {
+  padding-left: 0 !important;
+}
+
+.code-line {
+  display: block;
+  position: relative;
+  padding-left: 3.8em;
+  min-height: 1.5em;
+  line-height: 1.5;
+  white-space: pre;
+  margin: 0;
+}
+
+.code-line::before {
+  content: attr(data-line-number);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 2.8em;
+  text-align: right;
+  color: #64748b;
+  border-right: 1px solid #334155;
+  padding-right: 0.6em;
+  margin-right: 0.6em;
+  user-select: none;
+  pointer-events: none;
+  font-family: monospace;
 }

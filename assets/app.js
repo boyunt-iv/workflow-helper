@@ -114,6 +114,7 @@ const els = {
   copyListButton: document.querySelector("#copyListButton"),
   toggleResultTableUsage: document.querySelector("#toggleResultTableUsage"),
   resultTableUsageToggleContainer: document.querySelector("#resultTableUsageToggleContainer"),
+  tabQueryGen: document.querySelector("#tabQueryGen"),
 };
 
 const STORAGE_KEY = "workflowHelper.state.v4";
@@ -183,7 +184,7 @@ window.setMode = setMode;
 window.selectTable = selectTable;
 window.selectWorkflow = selectWorkflow;
 window.selectFunction = selectFunction;
-window.clearLiveHighlights = function() {
+window.clearLiveHighlights = function () {
   state.liveHighlightedWorkflow = null;
   state.liveExecutedNodes = null;
   renderDiagram();
@@ -312,8 +313,8 @@ function showManualRebuildInstructions() {
     <div class="status-instruction">
       <strong>Please manually rebuild the analyzer index.</strong>
       <ol>${instruction.steps
-        .map((step) => `<li>${step}</li>`)
-        .join("")}
+      .map((step) => `<li>${step}</li>`)
+      .join("")}
         <li>When the command finishes successfully, click <strong>Return To Unlock</strong> and select the new encrypted file.</li>
       </ol>
     </div>
@@ -513,6 +514,7 @@ function applyModeState() {
         node: "Triggers/FKs",
         db: "CRUD Map",
         inbound: "CR Gen",
+        "query-gen": "Query Gen",
       };
       button.textContent = labels[button.dataset.tab] || button.textContent;
     });
@@ -521,14 +523,14 @@ function applyModeState() {
       state.activeMode === "live"
         ? "Processes"
         : state.activeMode === "zbo"
-        ? "ZBO Areas"
-        : "Zoral Workflows";
+          ? "ZBO Areas"
+          : "Zoral Workflows";
     els.searchInput.placeholder =
       state.activeMode === "live"
         ? "Search by ApplicationId..."
         : state.activeMode === "zbo"
-        ? "Search ZBO area, query, field, workflow, table..."
-        : "Search workflow, ZBO area, parameter, field, table, GraphQL...";
+          ? "Search ZBO area, query, field, workflow, table..."
+          : "Search workflow, ZBO area, parameter, field, table, GraphQL...";
     document.querySelectorAll("[data-tab]").forEach((button) => {
       let labels;
       if (state.activeMode === "live") {
@@ -543,9 +545,9 @@ function applyModeState() {
   }
   const tabLiveExec = document.getElementById("tabLiveExec");
   if (tabLiveExec) {
-    const isLiveHighlighted = state.activeMode === "zoral" && 
-                              state.liveHighlightedWorkflow && 
-                              state.liveHighlightedWorkflow === state.selectedWorkflow?.name;
+    const isLiveHighlighted = state.activeMode === "zoral" &&
+      state.liveHighlightedWorkflow &&
+      state.liveHighlightedWorkflow === state.selectedWorkflow?.name;
     tabLiveExec.style.display = isLiveHighlighted ? "inline-block" : "none";
     if (!isLiveHighlighted && state.activeTab === "live-exec") {
       state.activeTab = "overview";
@@ -555,6 +557,15 @@ function applyModeState() {
     }
   }
   const isDb = state.activeMode === "database";
+  if (els.tabQueryGen) {
+    els.tabQueryGen.style.display = isDb ? "inline-block" : "none";
+    if (!isDb && state.activeTab === "query-gen") {
+      state.activeTab = "overview";
+      document.querySelectorAll("[data-tab]").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.tab === "overview");
+      });
+    }
+  }
   const isDbTables = isDb && state.dbSubmode === "tables";
   const isDbEr = isDb && state.dbSubmode === "er";
   const isZoral = state.activeMode === "zoral";
@@ -638,8 +649,8 @@ function copyFilteredList() {
 
   for (const item of items) {
     if (
-      item.classList.contains("result-limit") || 
-      item.classList.contains("result-empty") || 
+      item.classList.contains("result-limit") ||
+      item.classList.contains("result-empty") ||
       item.classList.contains("empty-state")
     ) {
       continue;
@@ -652,9 +663,9 @@ function copyFilteredList() {
       name = item.dataset.zboArea || "";
     } else if (state.activeMode === "database") {
       if (state.dbSubmode === "tables" || state.dbSubmode === "er") {
-        name = item.dataset.tableName || 
-               item.querySelector("[data-er-table]")?.dataset.erTable || 
-               item.querySelector("[data-table-click]")?.dataset.tableClick || "";
+        name = item.dataset.tableName ||
+          item.querySelector("[data-er-table]")?.dataset.erTable ||
+          item.querySelector("[data-table-click]")?.dataset.tableClick || "";
       } else if (state.dbSubmode === "enums") {
         name = item.dataset.enumName || "";
       } else if (state.dbSubmode === "functions") {
@@ -1267,12 +1278,12 @@ function setZoom(value) {
 function applyZoom() {
   const svg = els.diagramCanvas.querySelector(".diagram-svg");
   if (svg) svg.style.zoom = String(state.zoom);
-  
+
   const viewer = els.diagramCanvas.querySelector(".trace-viewer");
   if (viewer) {
     viewer.style.setProperty("--timeline-zoom", state.zoom);
   }
-  
+
   if (els.zoomLabel) els.zoomLabel.textContent = `${Math.round(state.zoom * 100)}%`;
 }
 window.applyZoom = applyZoom;
@@ -1868,20 +1879,20 @@ function renderZboResultDbOps(area) {
     <div class="result-db-ops">
       <span class="result-db-caption">Table Usage</span>
       ${entries
-        .map(
-          (entry) => `
+      .map(
+        (entry) => `
             <div class="result-db-row">
               <span class="db-op-table">${escapeHtml(entry.table)}</span>
               ${unique(entry.traces.map((trace) => normalizeOperation(trace.operation)))
-                .map(
-                  (op) =>
-                    `<span class="db-op op-${escapeAttr(op)}">${escapeHtml(capitalizeWord(op))}</span>`,
-                )
-                .join("")}
+            .map(
+              (op) =>
+                `<span class="db-op op-${escapeAttr(op)}">${escapeHtml(capitalizeWord(op))}</span>`,
+            )
+            .join("")}
             </div>
           `,
-        )
-        .join("")}
+      )
+      .join("")}
     </div>
   `;
 }
@@ -2022,11 +2033,11 @@ function renderResultDbOps(workflow) {
           <span class="db-op-table db-op-table-jump" data-workflow-table-pan="${escapeAttr(entry.table)}" title="Pan diagram to nodes using ${escapeAttr(entry.table)}">${escapeHtml(entry.table)}</span>
           ${entry.indirect ? `<span class="db-op-via-icon" title="${escapeAttr(indirectTableUsageTitle(entry))}" aria-label="Indirect table usage via called workflow">&#8618;</span>` : ""}
           ${entry.operations
-            .map(
-              (op) =>
-                `<span class="db-op op-${escapeAttr(op)}">${escapeHtml(capitalizeWord(op))}</span>`,
-            )
-            .join("")}
+          .map(
+            (op) =>
+              `<span class="db-op op-${escapeAttr(op)}">${escapeHtml(capitalizeWord(op))}</span>`,
+          )
+          .join("")}
         </div>
       `,
     )
@@ -2233,8 +2244,8 @@ function selectWorkflow(name, options = {}) {
 function selectNode(nodeId) {
   state.selectedNodeId = state.selectedNodeId === nodeId ? null : nodeId;
   state.selectedEdge = null;
-  const isLiveHighlighted = state.liveHighlightedWorkflow && 
-                            state.liveHighlightedWorkflow === state.selectedWorkflow?.name;
+  const isLiveHighlighted = state.liveHighlightedWorkflow &&
+    state.liveHighlightedWorkflow === state.selectedWorkflow?.name;
   state.activeTab = isLiveHighlighted ? "live-exec" : "node";
   document
     .querySelectorAll("[data-tab]")
@@ -2248,8 +2259,8 @@ function selectEdge(from, to) {
   const isSame = state.selectedEdge && state.selectedEdge.from === from && state.selectedEdge.to === to;
   state.selectedEdge = isSame ? null : { from, to };
   state.selectedNodeId = null;
-  const isLiveHighlighted = state.liveHighlightedWorkflow && 
-                            state.liveHighlightedWorkflow === state.selectedWorkflow?.name;
+  const isLiveHighlighted = state.liveHighlightedWorkflow &&
+    state.liveHighlightedWorkflow === state.selectedWorkflow?.name;
   state.activeTab = isLiveHighlighted ? "live-exec" : "node";
   document
     .querySelectorAll("[data-tab]")
@@ -3061,9 +3072,9 @@ function attachZoralNodeDrag(nodeEl, workflow) {
 function isMeaningfulZboAction(action) {
   return Boolean(
     (action.queryRefs && action.queryRefs.length) ||
-      (action.zoralCalls && action.zoralCalls.length) ||
-      (action.navigationTargets && action.navigationTargets.length) ||
-      (action.dbOperations && action.dbOperations.length),
+    (action.zoralCalls && action.zoralCalls.length) ||
+    (action.navigationTargets && action.navigationTargets.length) ||
+    (action.dbOperations && action.dbOperations.length),
   );
 }
 
@@ -3133,7 +3144,7 @@ function renderZboFlowNode(node) {
   })();
   const isWorkflowCodeMatch = (node.kind === "workflow" || node.kind === "condition") && state.searchScope === "code" && state.query && (() => {
     const wf = state.workflows.find(w => w.name === node.label);
-    return wf && wf.nodes.some(n => 
+    return wf && wf.nodes.some(n =>
       matches(n.inputScript || "", state.query) ||
       matches(n.outputScript || "", state.query) ||
       matches(n.conditionScript || "", state.query)
@@ -3150,11 +3161,11 @@ function renderZboFlowNode(node) {
       ${node.userTriggered ? renderUserIcon(x + 10, y + 10) : ""}
       ${node.eventType ? `<text class="zbo-flow-event" x="${x + width - 10}" y="${y + 14}" text-anchor="end">${escapeHtml(displayActionEvent(node.eventType))}</text>` : ""}
       ${labelLines
-        .map(
-          (line, index) =>
-            `<text class="zbo-flow-label" x="${node.x}" y="${firstY + index * 14}" text-anchor="middle">${escapeHtml(line)}</text>`,
-        )
-        .join("")}
+      .map(
+        (line, index) =>
+          `<text class="zbo-flow-label" x="${node.x}" y="${firstY + index * 14}" text-anchor="middle">${escapeHtml(line)}</text>`,
+      )
+      .join("")}
       <text class="zbo-flow-subtitle" x="${node.x}" y="${node.y + 21}" text-anchor="middle">${escapeHtml(truncate(node.subtitle || "", 30))}</text>
       ${state.showDbBadges ? renderZboDbBadge(node) : ""}
     </g>
@@ -3188,7 +3199,7 @@ function renderZboConditionNode(node) {
 
   const isWorkflowCodeMatch = state.searchScope === "code" && state.query && (() => {
     const wf = state.workflows.find(w => w.name === node.label);
-    return wf && wf.nodes.some(n => 
+    return wf && wf.nodes.some(n =>
       matches(n.inputScript || "", state.query) ||
       matches(n.outputScript || "", state.query) ||
       matches(n.conditionScript || "", state.query)
@@ -3201,11 +3212,11 @@ function renderZboConditionNode(node) {
       <title>${escapeHtml(zboNodeTooltip(node))}</title>
       <polygon points="${points}"></polygon>
       ${labelLines
-        .map(
-          (line, index) =>
-            `<text class="zbo-flow-label" x="${cx}" y="${firstY + index * 13}" text-anchor="middle">${escapeHtml(line)}</text>`,
-        )
-        .join("")}
+      .map(
+        (line, index) =>
+          `<text class="zbo-flow-label" x="${cx}" y="${firstY + index * 13}" text-anchor="middle">${escapeHtml(line)}</text>`,
+      )
+      .join("")}
       ${state.showDbBadges ? renderZboDbBadge(node) : ""}
     </g>
   `;
@@ -3288,8 +3299,8 @@ function renderZboFlowEdge(edge) {
     state.selectedZboNodeId && edge.from === state.selectedZboNodeId ? "edge-outbound" : "",
     state.selectedZboNodeId && edge.to === state.selectedZboNodeId ? "edge-inbound" : "",
     state.selectedZboEdge &&
-    state.selectedZboEdge.from === edge.from &&
-    state.selectedZboEdge.to === edge.to
+      state.selectedZboEdge.from === edge.from &&
+      state.selectedZboEdge.to === edge.to
       ? "selected"
       : "",
   ]
@@ -3299,11 +3310,10 @@ function renderZboFlowEdge(edge) {
     <g class="zbo-flow-edge zbo-edge-${escapeAttr(edge.kind || "normal")} ${highlight}" data-edge-from="${escapeAttr(edge.from)}" data-edge-to="${escapeAttr(edge.to)}">
       <path class="zbo-edge-hit" d="${edge.path}"></path>
       <path class="zbo-edge-line" d="${edge.path}" marker-end="url(#zboArrow)"></path>
-      ${
-        label
-          ? `<title>${escapeHtml(full)}</title><text x="${edge.labelX}" y="${edge.labelY}" text-anchor="middle">${escapeHtml(label)}</text>`
-          : ""
-      }
+      ${label
+      ? `<title>${escapeHtml(full)}</title><text x="${edge.labelX}" y="${edge.labelY}" text-anchor="middle">${escapeHtml(label)}</text>`
+      : ""
+    }
     </g>
   `;
 }
@@ -3637,8 +3647,8 @@ function payloadHasFailFlag(value, depth) {
   if (Array.isArray(value)) return value.some(v => payloadHasFailFlag(v, depth + 1));
   for (const [k, v] of Object.entries(value)) {
     if (/^(status|severity)$/i.test(k) &&
-        (typeof v === "string" || typeof v === "boolean" || typeof v === "number") &&
-        failRe.test(String(v))) {
+      (typeof v === "string" || typeof v === "boolean" || typeof v === "number") &&
+      failRe.test(String(v))) {
       return true;
     }
     if (payloadHasFailFlag(v, depth + 1)) return true;
@@ -3648,10 +3658,10 @@ function payloadHasFailFlag(value, depth) {
 
 function getEdgeLiveStatus(edge, fromNode, toNode, workflow) {
   if (!state.liveHighlightedWorkflow || !state.liveExecutedNodes) return null;
-  
+
   const fromStatus = getNodeLiveStatus(edge.from, workflow);
   const toStatus = getNodeLiveStatus(edge.to, workflow);
-  
+
   if (!fromStatus || !toStatus) return null;
 
   // Branch exclusion logic for Live execution path:
@@ -3663,13 +3673,13 @@ function getEdgeLiveStatus(edge, fromNode, toNode, workflow) {
     const steps = typeof window.WorkflowLive?.getSelectedProcessSteps === "function"
       ? window.WorkflowLive.getSelectedProcessSteps()
       : [];
-    
+
     if (steps.length > 0) {
       // Find all sibling target node IDs from the same source node
       const siblingTargets = workflow.edges.filter(e => e.from === edge.from).map(e => e.to);
-      
+
       let transitionOccurred = false;
-      
+
       for (let i = 0; i < steps.length; i++) {
         if (matchNodeWithStep(edge.from, steps[i], workflow)) {
           // Look ahead in trace to find the first executed sibling target
@@ -3685,7 +3695,7 @@ function getEdgeLiveStatus(edge, fromNode, toNode, workflow) {
           if (transitionOccurred) break;
         }
       }
-      
+
       if (!transitionOccurred) {
         return null; // Suppress edge highlight since it wasn't the branch taken in the trace
       }
@@ -3716,7 +3726,7 @@ function getEdgeLiveStatus(edge, fromNode, toNode, workflow) {
       }
     }
   }
-  
+
   if (toStatus === "failed") return "failed";
   return "completed";
 }
@@ -3750,8 +3760,8 @@ function renderEdge(routed, offsetX, offsetY, selectedNodeId, edgeIndex = 0) {
     state.selectedEdge.to === edge.to;
 
   const edgeStatus = getEdgeLiveStatus(edge, fromNode, toNode, state.selectedWorkflow);
-  const liveHighlightClass = edgeStatus 
-    ? `step-highlight-edge ${edgeStatus === "failed" ? "danger" : "success"}` 
+  const liveHighlightClass = edgeStatus
+    ? `step-highlight-edge ${edgeStatus === "failed" ? "danger" : "success"}`
     : "";
 
   const isAsync = Boolean(fromNode.async || toNode.async);
@@ -4232,7 +4242,7 @@ function renderNode(node, offsetX, offsetY, isActive, dbOps = []) {
 
   const tooltip = zoralNodeTooltip(node);
 
-  const isCodeMatch = state.searchScope === "code" && state.query && 
+  const isCodeMatch = state.searchScope === "code" && state.query &&
     (!state.selectedWorkflow || state.query.toLowerCase().trim() !== state.selectedWorkflow.name.toLowerCase().trim()) && (
       matches(node.inputScript || "", state.query) ||
       matches(node.outputScript || "", state.query) ||
@@ -4633,25 +4643,25 @@ function renderArtifactList(ids, kind) {
   return `
     <div class="artifact-list" style="display: flex; flex-direction: column; gap: 8px;">
       ${ids
-        .slice(0, 140)
-        .map((id) => {
-          // Raw source for all kinds (query/plugin .gql/.js, schema/grid .json).
-          let code = "";
-          if (kind === "query") {
-            code = state.zboQueries.find(q => q.id === id)?.code || "";
-          } else if (kind === "plugin") {
-            code = state.zboPlugins.find(p => p.id === id)?.code || "";
-          } else if (kind === "schema") {
-            code = state.zboSchemas.find(s => s.id === id)?.code || "";
-          } else if (kind === "grid") {
-            code = state.zboGrids.find(g => g.id === id)?.code || "";
-          }
+      .slice(0, 140)
+      .map((id) => {
+        // Raw source for all kinds (query/plugin .gql/.js, schema/grid .json).
+        let code = "";
+        if (kind === "query") {
+          code = state.zboQueries.find(q => q.id === id)?.code || "";
+        } else if (kind === "plugin") {
+          code = state.zboPlugins.find(p => p.id === id)?.code || "";
+        } else if (kind === "schema") {
+          code = state.zboSchemas.find(s => s.id === id)?.code || "";
+        } else if (kind === "grid") {
+          code = state.zboGrids.find(g => g.id === id)?.code || "";
+        }
 
-          // Highlight + auto-open the artifact when its content matches the search.
-          const isHit = state.searchScope === "code" && state.query && matches(code, state.query);
+        // Highlight + auto-open the artifact when its content matches the search.
+        const isHit = state.searchScope === "code" && state.query && matches(code, state.query);
 
-          if (code) {
-            return `
+        if (code) {
+          return `
               <details class="artifact-details${isHit ? " artifact-hit" : ""}" ${isHit ? "open" : ""} style="border: 1px solid ${isHit ? "#ff8f00" : "var(--line)"}; border-radius: 6px; background: var(--surface-2); overflow: hidden;">
                 <summary style="padding: 6px 10px; cursor: pointer; display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 13px; user-select: none;">
                   <span class="badge" style="background: rgba(14, 165, 233, 0.12); color: #0ea5e9; font-weight: 600;">${escapeHtml(kind)}</span>
@@ -4668,16 +4678,16 @@ function renderArtifactList(ids, kind) {
                 </div>
               </details>
             `;
-          } else {
-            return `
+        } else {
+          return `
               <div class="artifact-row" style="display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); font-size: 13px;">
                 <span class="badge">${escapeHtml(kind)}</span>
                 <span style="font-family: monospace; color: var(--text); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(id)}</span>
               </div>
             `;
-          }
-        })
-        .join("")}
+        }
+      })
+      .join("")}
       ${ids.length > 140 ? `<p class="muted">Showing first 140 of ${ids.length}.</p>` : ""}
     </div>
   `;
@@ -4752,17 +4762,17 @@ function renderZboQueryTable(queries) {
       <thead><tr><th>Query</th><th>Operation</th><th>Variables</th></tr></thead>
       <tbody>
         ${queries
-          .slice(0, 160)
-          .map(
-            (query) => `
+      .slice(0, 160)
+      .map(
+        (query) => `
               <tr>
                 <td>${escapeHtml(query.id)}</td>
                 <td>${escapeHtml(query.operationName || query.operationType || "-")}</td>
                 <td>${escapeHtml((query.variables || []).map((item) => item.name).join(", ") || "-")}</td>
               </tr>
             `,
-          )
-          .join("")}
+      )
+      .join("")}
       </tbody>
     </table>
   `;
@@ -4774,17 +4784,17 @@ function renderZboCalls(area) {
       <h3>Page Inbound</h3>
       <div class="small-list">
         ${(area.inboundPages || [])
-          .map((item) => `<span class="badge">${escapeHtml(item.area)} via ${escapeHtml(item.route || "-")}</span>`)
-          .join("") ||
-          [
-            ...area.schemaIds.map((id) => `schema: ${id}`),
-            ...area.gridIds.map((id) => `grid: ${id}`),
-            ...area.pluginIds.map((id) => `plugin: ${id}`),
-          ]
-            .slice(0, 120)
-            .map((item) => `<span class="badge">${escapeHtml(item)}</span>`)
-            .join("") ||
-          '<span class="muted">No page inbound/artifacts indexed.</span>'}
+      .map((item) => `<span class="badge">${escapeHtml(item.area)} via ${escapeHtml(item.route || "-")}</span>`)
+      .join("") ||
+    [
+      ...area.schemaIds.map((id) => `schema: ${id}`),
+      ...area.gridIds.map((id) => `grid: ${id}`),
+      ...area.pluginIds.map((id) => `plugin: ${id}`),
+    ]
+      .slice(0, 120)
+      .map((item) => `<span class="badge">${escapeHtml(item)}</span>`)
+      .join("") ||
+    '<span class="muted">No page inbound/artifacts indexed.</span>'}
       </div>
     </section>
 
@@ -4795,26 +4805,25 @@ function renderZboCalls(area) {
 
     <section class="detail-section">
       <h3>Zoral Calls</h3>
-      ${
-        (area.zoralCalls || []).length
-          ? `<table class="table">
+      ${(area.zoralCalls || []).length
+      ? `<table class="table">
               <thead><tr><th>Workflow / Action ID</th><th>Source</th><th>File</th></tr></thead>
               <tbody>
                 ${area.zoralCalls
-                  .map(
-                    (call) => `
+        .map(
+          (call) => `
                       <tr>
                         <td>${renderWorkflowInline(call.workflow)}</td>
                         <td>${escapeHtml(call.source || "-")}</td>
                         <td>${escapeHtml(call.sourcePath || "-")}</td>
                       </tr>
                     `,
-                  )
-                  .join("")}
+        )
+        .join("")}
               </tbody>
             </table>`
-          : '<p class="muted">No direct Zoral calls detected.</p>'
-      }
+      : '<p class="muted">No direct Zoral calls detected.</p>'
+    }
     </section>
 
     <section class="detail-section">
@@ -4844,8 +4853,8 @@ function renderZboActionsTable(actions) {
       </thead>
       <tbody>
         ${actions
-          .map(
-            (action) => `
+      .map(
+        (action) => `
               <tr>
                 <td>${escapeHtml(action.label || action.name)}</td>
                 <td>${escapeHtml(displayActionEvent(action.eventType) || action.type || action.operationType || "-")}${action.userTriggered ? " (user)" : ""}</td>
@@ -4854,8 +4863,8 @@ function renderZboActionsTable(actions) {
                 <td>${renderActionRefs(action)}</td>
               </tr>
             `,
-          )
-          .join("")}
+      )
+      .join("")}
       </tbody>
     </table>
   `;
@@ -4875,8 +4884,8 @@ function renderZboNavigationTable(targets) {
       <thead><tr><th>Target ZBO</th><th>Route</th><th>Condition</th><th>Source</th></tr></thead>
       <tbody>
         ${targets
-          .map(
-            (target) => `
+      .map(
+        (target) => `
               <tr>
                 <td>${escapeHtml(target.targetArea || "-")}</td>
                 <td>${escapeHtml(target.route || "-")}</td>
@@ -4884,8 +4893,8 @@ function renderZboNavigationTable(targets) {
                 <td>${escapeHtml(target.sourcePath || "-")}</td>
               </tr>
             `,
-          )
-          .join("")}
+      )
+      .join("")}
       </tbody>
     </table>
   `;
@@ -4964,10 +4973,9 @@ function renderEdgeDetail(workflow) {
       ${renderKv("Branch", edge.condition === "else" ? "else (default)" : edge.kind || "normal")}
     </section>
 
-    ${
-      condition
-        ? renderCodeSection("Condition", condition)
-        : `<section class="detail-section"><h3>Condition</h3><p class="muted">No explicit condition (default / sequential flow).</p></section>`
+    ${condition
+      ? renderCodeSection("Condition", condition)
+      : `<section class="detail-section"><h3>Condition</h3><p class="muted">No explicit condition (default / sequential flow).</p></section>`
     }
 
     <section class="detail-section">
@@ -5126,41 +5134,41 @@ function renderOutgoingOperationsTable(items) {
         </thead>
         <tbody>
           ${sortedTables.map((tbl) => {
-            const tableItems = groups.get(tbl).sort(compareOps);
-            const uniqueOps = [...new Set(tableItems.map(item => String(item.operation || "").toLowerCase()))].sort((a, b) => {
-              return (opOrder[a] ?? 100) - (opOrder[b] ?? 100);
-            });
-            const opBadges = uniqueOps.map(op => {
-              return `<span style="display: inline-block; font-weight: 800; font-family: monospace; font-size: 10px; background: ${getOpBgColor(op)}; color: ${getOpTextColor(op)}; padding: 1px 5px; border-radius: 4px; margin-right: 4px;">${escapeHtml(opCode(op))}</span>`;
-            }).join("");
+    const tableItems = groups.get(tbl).sort(compareOps);
+    const uniqueOps = [...new Set(tableItems.map(item => String(item.operation || "").toLowerCase()))].sort((a, b) => {
+      return (opOrder[a] ?? 100) - (opOrder[b] ?? 100);
+    });
+    const opBadges = uniqueOps.map(op => {
+      return `<span style="display: inline-block; font-weight: 800; font-family: monospace; font-size: 10px; background: ${getOpBgColor(op)}; color: ${getOpTextColor(op)}; padding: 1px 5px; border-radius: 4px; margin-right: 4px;">${escapeHtml(opCode(op))}</span>`;
+    }).join("");
 
-            // Deduplicate occurrences based on: Usage, workflow, nodeId, operation
-            const seenOccurrences = new Set();
-            const uniqueTableItems = [];
-            for (const item of tableItems) {
-              const usage = item.indirect ? "Indirect" : "Direct";
-              const key = [usage, item.workflow, item.nodeId, item.operation].join("|").toLowerCase();
-              if (!seenOccurrences.has(key)) {
-                seenOccurrences.add(key);
-                uniqueTableItems.push({ item, key });
-              }
-            }
+    // Deduplicate occurrences based on: Usage, workflow, nodeId, operation
+    const seenOccurrences = new Set();
+    const uniqueTableItems = [];
+    for (const item of tableItems) {
+      const usage = item.indirect ? "Indirect" : "Direct";
+      const key = [usage, item.workflow, item.nodeId, item.operation].join("|").toLowerCase();
+      if (!seenOccurrences.has(key)) {
+        seenOccurrences.add(key);
+        uniqueTableItems.push({ item, key });
+      }
+    }
 
-            const detailsHtml = uniqueTableItems.map(({ item, key }, idx) => {
-              const borderStyle = idx < uniqueTableItems.length - 1 ? ' style="border-bottom: 1px dashed var(--line); padding-bottom: 6px; margin-bottom: 6px;"' : '';
-              
-              // Tooltip on mouseover: collect all distinct sources/paths for this key
-              const matchedItems = tableItems.filter(o => {
-                const oUsage = o.indirect ? "Indirect" : "Direct";
-                return [oUsage, o.workflow, o.nodeId, o.operation].join("|").toLowerCase() === key;
-              });
-              const sources = [...new Set(matchedItems.map(o => o.source).filter(Boolean))];
-              const paths = [...new Set(matchedItems.map(o => o.path).filter(Boolean))];
-              const pathText = paths.length ? `\nPath: ${paths.join(" | ")}` : "";
-              const viaText = item.indirect && item.viaNode ? `\nVia: ${item.viaNode} -> ${item.viaWorkflow || item.sourceWorkflow || ""}` : "";
-              const tooltip = `Source: ${sources.join(", ")}${pathText}${viaText}`;
+    const detailsHtml = uniqueTableItems.map(({ item, key }, idx) => {
+      const borderStyle = idx < uniqueTableItems.length - 1 ? ' style="border-bottom: 1px dashed var(--line); padding-bottom: 6px; margin-bottom: 6px;"' : '';
 
-              return `
+      // Tooltip on mouseover: collect all distinct sources/paths for this key
+      const matchedItems = tableItems.filter(o => {
+        const oUsage = o.indirect ? "Indirect" : "Direct";
+        return [oUsage, o.workflow, o.nodeId, o.operation].join("|").toLowerCase() === key;
+      });
+      const sources = [...new Set(matchedItems.map(o => o.source).filter(Boolean))];
+      const paths = [...new Set(matchedItems.map(o => o.path).filter(Boolean))];
+      const pathText = paths.length ? `\nPath: ${paths.join(" | ")}` : "";
+      const viaText = item.indirect && item.viaNode ? `\nVia: ${item.viaNode} -> ${item.viaWorkflow || item.sourceWorkflow || ""}` : "";
+      const tooltip = `Source: ${sources.join(", ")}${pathText}${viaText}`;
+
+      return `
                 <div${borderStyle} title="${escapeAttr(tooltip)}">
                   <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; line-height: 1.45; cursor: help;">
                     <span class="op-usage-badge ${item.indirect ? 'indirect' : 'direct'}">${item.indirect ? 'Indirect' : 'Direct'}</span>
@@ -5170,9 +5178,9 @@ function renderOutgoingOperationsTable(items) {
                   </div>
                 </div>
               `;
-            }).join("");
+    }).join("");
 
-            return `
+    return `
               <tr>
                 <td style="font-weight: 700; font-family: monospace; font-size: 12px; color: var(--text); vertical-align: top; padding-top: 10px;">${escapeHtml(tbl)}</td>
                 <td style="vertical-align: top; padding-top: 10px; white-space: nowrap;">${opBadges}</td>
@@ -5183,7 +5191,7 @@ function renderOutgoingOperationsTable(items) {
                 </td>
               </tr>
             `;
-          }).join("")}
+  }).join("")}
         </tbody>
       </table>
     </div>
@@ -5400,13 +5408,13 @@ function renderDecisionMatrix(node, liveOutputObj = null, liveInputObj = null, g
   if (!node.decisionMatrix) return "";
   const { columns, rows, decisionMatrixType } = node.decisionMatrix;
   if (!columns || !columns.length) return "";
-  
+
   const headers = columns.map(c => `<th style="white-space: nowrap;">${escapeHtml(c.id)} <br><small class="muted" style="font-weight:normal">${escapeHtml(c.use || c.type)}</small></th>`).join("");
-  
+
   const context = {};
   columns.forEach(c => {
-    const isOutput = String(c.use || "").toLowerCase().includes("output") || 
-                     String(c.use || "").toLowerCase().includes("result");
+    const isOutput = String(c.use || "").toLowerCase().includes("output") ||
+      String(c.use || "").toLowerCase().includes("result");
     if (isOutput) return;
     let val = undefined;
     if (liveInputObj) val = findKeyValueRecursive(liveInputObj, c.id);
@@ -5424,10 +5432,10 @@ function renderDecisionMatrix(node, liveOutputObj = null, liveInputObj = null, g
       let inputMatch = true;
 
       columns.forEach(c => {
-        const isOutput = String(c.use || "").toLowerCase().includes("output") || 
-                         String(c.use || "").toLowerCase().includes("result");
+        const isOutput = String(c.use || "").toLowerCase().includes("output") ||
+          String(c.use || "").toLowerCase().includes("result");
         if (isOutput) return;
-        
+
         const cell = r.values.find(val => val.column === c.id);
         if (!cell) return;
 
@@ -5446,7 +5454,7 @@ function renderDecisionMatrix(node, liveOutputObj = null, liveInputObj = null, g
               let actualVal = undefined;
               if (liveInputObj) actualVal = findKeyValueRecursive(liveInputObj, c.id);
               if (actualVal === undefined && globalVarsObj) actualVal = findKeyValueRecursive(globalVarsObj, c.id);
-              
+
               if (actualVal !== undefined) {
                 if (!decisionMatrixValuesEqual(actualVal, cellValStr)) {
                   inputMatch = false;
@@ -5461,10 +5469,10 @@ function renderDecisionMatrix(node, liveOutputObj = null, liveInputObj = null, g
 
       isMatch = inputChecked ? inputMatch : false;
     }
-    
+
     const trStyle = isMatch ? 'background-color: rgba(245, 158, 11, 0.25); outline: 2px solid #f59e0b; outline-offset: -2px;' : '';
     const tdStyle = isMatch ? ' style="background-color: rgba(245, 158, 11, 0.28); box-shadow: inset 0 2px #f59e0b, inset 0 -2px #f59e0b;"' : '';
-    
+
     const tds = columns.map(c => {
       const v = r.values.find(val => val.column === c.id);
       if (!v) return `<td${tdStyle}>-</td>`;
@@ -5502,8 +5510,8 @@ function renderIoRows(rows, requiredFields = [], workflow = null, node = null) {
       </thead>
       <tbody>
         ${rows
-          .map(
-            (row) => `
+      .map(
+        (row) => `
               <tr>
                 <td>${escapeHtml(row.field)}</td>
                 <td>${escapeHtml(row.type || row.source || "-")}</td>
@@ -5512,8 +5520,8 @@ function renderIoRows(rows, requiredFields = [], workflow = null, node = null) {
                 <td>${escapeHtml(row.description || "")}</td>
               </tr>
             `,
-          )
-          .join("")}
+      )
+      .join("")}
       </tbody>
     </table>
   `;
@@ -5576,11 +5584,10 @@ function renderDbGraphql(workflow) {
     </section>
     <section class="detail-section">
       <h3>GraphQL Snippets</h3>
-      ${
-        workflow.graphqlSnippets
-          .map((item) => renderCodeSection(item.nodeId, item.snippet))
-          .join("") || '<p class="muted">No GraphQL snippets detected.</p>'
-      }
+      ${workflow.graphqlSnippets
+      .map((item) => renderCodeSection(item.nodeId, item.snippet))
+      .join("") || '<p class="muted">No GraphQL snippets detected.</p>'
+    }
     </section>
   `;
 }
@@ -5625,44 +5632,44 @@ function renderOperationsTable(ops, options = {}) {
         </thead>
         <tbody>
           ${sortedTables.map((tbl) => {
-            const tableOps = groups.get(tbl).sort(compareOps);
-            const uniqueOps = [...new Set(tableOps.map(op => String(op.operation || "").toLowerCase()))].sort((a, b) => {
-              return (opOrder[a] ?? 100) - (opOrder[b] ?? 100);
-            });
-            const opBadges = uniqueOps.map(op => {
-              return `<span style="display: inline-block; font-weight: 800; font-family: monospace; font-size: 10px; background: ${getOpBgColor(op)}; color: ${getOpTextColor(op)}; padding: 1px 5px; border-radius: 4px; margin-right: 4px;">${escapeHtml(opCode(op))}</span>`;
-            }).join("");
+    const tableOps = groups.get(tbl).sort(compareOps);
+    const uniqueOps = [...new Set(tableOps.map(op => String(op.operation || "").toLowerCase()))].sort((a, b) => {
+      return (opOrder[a] ?? 100) - (opOrder[b] ?? 100);
+    });
+    const opBadges = uniqueOps.map(op => {
+      return `<span style="display: inline-block; font-weight: 800; font-family: monospace; font-size: 10px; background: ${getOpBgColor(op)}; color: ${getOpTextColor(op)}; padding: 1px 5px; border-radius: 4px; margin-right: 4px;">${escapeHtml(opCode(op))}</span>`;
+    }).join("");
 
-            // Deduplicate occurrences based on: Usage, wfName, nodeId, operation
-            const seenOccurrences = new Set();
-            const uniqueTableOps = [];
-            for (const op of tableOps) {
-              const wfName = op.viaWorkflow || op.sourceWorkflow || (state.selectedWorkflow ? state.selectedWorkflow.name : "");
-              const usage = op.indirect ? "Indirect" : "Direct";
-              const key = [usage, wfName, op.nodeId, op.operation].join("|").toLowerCase();
-              if (!seenOccurrences.has(key)) {
-                seenOccurrences.add(key);
-                uniqueTableOps.push({ op, key });
-              }
-            }
+    // Deduplicate occurrences based on: Usage, wfName, nodeId, operation
+    const seenOccurrences = new Set();
+    const uniqueTableOps = [];
+    for (const op of tableOps) {
+      const wfName = op.viaWorkflow || op.sourceWorkflow || (state.selectedWorkflow ? state.selectedWorkflow.name : "");
+      const usage = op.indirect ? "Indirect" : "Direct";
+      const key = [usage, wfName, op.nodeId, op.operation].join("|").toLowerCase();
+      if (!seenOccurrences.has(key)) {
+        seenOccurrences.add(key);
+        uniqueTableOps.push({ op, key });
+      }
+    }
 
-            const detailsHtml = uniqueTableOps.map(({ op, key }, idx) => {
-              const borderStyle = idx < uniqueTableOps.length - 1 ? ' style="border-bottom: 1px dashed var(--line); padding-bottom: 6px; margin-bottom: 6px;"' : '';
-              const wfName = op.viaWorkflow || op.sourceWorkflow || (state.selectedWorkflow ? state.selectedWorkflow.name : "");
-              
-              // Tooltip on mouseover: collect all distinct sources/paths for this key
-              const matchedOps = tableOps.filter(o => {
-                const oWfName = o.viaWorkflow || o.sourceWorkflow || (state.selectedWorkflow ? state.selectedWorkflow.name : "");
-                const oUsage = o.indirect ? "Indirect" : "Direct";
-                return [oUsage, oWfName, o.nodeId, o.operation].join("|").toLowerCase() === key;
-              });
-              const sources = [...new Set(matchedOps.map(o => o.source).filter(Boolean))];
-              const paths = [...new Set(matchedOps.map(o => o.path).filter(Boolean))];
-              const pathText = paths.length ? `\nPath: ${paths.join(" | ")}` : "";
-              const viaText = op.indirect ? `\nVia: ${op.viaNode || op.nodeId} -> ${op.viaWorkflow || op.sourceWorkflow}` : "";
-              const tooltip = `Source: ${sources.join(", ")}${pathText}${viaText}`;
+    const detailsHtml = uniqueTableOps.map(({ op, key }, idx) => {
+      const borderStyle = idx < uniqueTableOps.length - 1 ? ' style="border-bottom: 1px dashed var(--line); padding-bottom: 6px; margin-bottom: 6px;"' : '';
+      const wfName = op.viaWorkflow || op.sourceWorkflow || (state.selectedWorkflow ? state.selectedWorkflow.name : "");
 
-              return `
+      // Tooltip on mouseover: collect all distinct sources/paths for this key
+      const matchedOps = tableOps.filter(o => {
+        const oWfName = o.viaWorkflow || o.sourceWorkflow || (state.selectedWorkflow ? state.selectedWorkflow.name : "");
+        const oUsage = o.indirect ? "Indirect" : "Direct";
+        return [oUsage, oWfName, o.nodeId, o.operation].join("|").toLowerCase() === key;
+      });
+      const sources = [...new Set(matchedOps.map(o => o.source).filter(Boolean))];
+      const paths = [...new Set(matchedOps.map(o => o.path).filter(Boolean))];
+      const pathText = paths.length ? `\nPath: ${paths.join(" | ")}` : "";
+      const viaText = op.indirect ? `\nVia: ${op.viaNode || op.nodeId} -> ${op.viaWorkflow || op.sourceWorkflow}` : "";
+      const tooltip = `Source: ${sources.join(", ")}${pathText}${viaText}`;
+
+      return `
                 <div${borderStyle} title="${escapeAttr(tooltip)}">
                   <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; line-height: 1.45; cursor: help;">
                     ${showUsage ? `${renderOperationUsage(op)}` : ""}
@@ -5672,9 +5679,9 @@ function renderOperationsTable(ops, options = {}) {
                   </div>
                 </div>
               `;
-            }).join("");
+    }).join("");
 
-            return `
+    return `
               <tr>
                 <td style="font-weight: 700; font-family: monospace; font-size: 12px; color: var(--text); vertical-align: top; padding-top: 10px;">${escapeHtml(tbl)}</td>
                 <td style="vertical-align: top; padding-top: 10px; white-space: nowrap;">${opBadges}</td>
@@ -5685,7 +5692,7 @@ function renderOperationsTable(ops, options = {}) {
                 </td>
               </tr>
             `;
-          }).join("")}
+  }).join("")}
         </tbody>
       </table>
     </div>
@@ -5800,8 +5807,8 @@ function renderZboFieldMappingTable(mappings, options = {}) {
       </thead>
       <tbody>
         ${mappings
-          .map(
-            (mapping) => `
+      .map(
+        (mapping) => `
               <tr>
                 <td>${escapeHtml(mapping.area || "-")}</td>
                 <td>${escapeHtml(mapping.zboField || "-")}</td>
@@ -5811,8 +5818,8 @@ function renderZboFieldMappingTable(mappings, options = {}) {
                 <td>${escapeHtml(mapping.confidence || "-")}</td>
               </tr>
             `,
-          )
-          .join("")}
+      )
+      .join("")}
       </tbody>
     </table>
     ${options.footer ? `<p class="muted">${escapeHtml(options.footer)}</p>` : ""}
@@ -5831,41 +5838,39 @@ function renderInbound(workflow) {
   return `
     <section class="detail-section">
       <h3>Inbound Workflows</h3>
-      ${
-        workflow.inboundCallers.length
-          ? `<table class="table">
+      ${workflow.inboundCallers.length
+      ? `<table class="table">
               <thead>
                 <tr><th>Workflow</th><th>Source</th></tr>
               </thead>
               <tbody>
                 ${workflow.inboundCallers
-                  .map(
-                    (caller) => `
+        .map(
+          (caller) => `
                     <tr>
                       <td><a class="workflow-link" href="${escapeAttr(makeWorkflowUrl(caller.workflow))}" target="_blank" rel="noreferrer">${escapeHtml(caller.workflow)}</a></td>
                       <td>${escapeHtml(caller.sourcePath)}</td>
                     </tr>
                   `,
-                  )
-                  .join("")}
+        )
+        .join("")}
               </tbody>
             </table>`
-          : '<p class="muted">No inbound workflow callers detected.</p>'
-      }
+      : '<p class="muted">No inbound workflow callers detected.</p>'
+    }
     </section>
 
     <section class="detail-section">
       <h3>Inbound from ZBO</h3>
-      ${
-        directZboCallers.length
-          ? `<table class="table">
+      ${directZboCallers.length
+      ? `<table class="table">
               <thead>
                 <tr><th>Area</th><th>Via</th><th>Match</th><th>Confidence</th><th>Source</th></tr>
               </thead>
               <tbody>
                 ${directZboCallers
-                  .map(
-                    (caller) => `
+        .map(
+          (caller) => `
                       <tr>
                         <td>${renderZboAreaInline(caller.area)}</td>
                         <td>${escapeHtml(caller.via)}</td>
@@ -5874,12 +5879,12 @@ function renderInbound(workflow) {
                         <td>${escapeHtml(caller.sourcePath || "-")}</td>
                       </tr>
                     `,
-                  )
-                  .join("")}
+        )
+        .join("")}
               </tbody>
             </table>`
-          : '<p class="muted">No direct ZBO callers detected.</p>'
-      }
+      : '<p class="muted">No direct ZBO callers detected.</p>'
+    }
     </section>
 
     <section class="detail-section">
@@ -5997,7 +6002,7 @@ function extractAndEvaluateVariables(script, stepInput, stepOutput, processConte
     const normalizedPath = path.replaceAll(/\[['"]?([a-zA-Z0-9_$]+)['"]?\]/g, ".$1");
     const parts = normalizedPath.split(/\??\./);
     const prefixes = ["input", "globalvariables", "global", "variables", "context", "data"];
-    
+
     if (parts.length > 1 && parts[0].toLowerCase() === "steps") {
       const stepName = parts[1].toLowerCase();
       const remainingPath = parts.slice(2);
@@ -6036,7 +6041,7 @@ function extractAndEvaluateVariables(script, stepInput, stepOutput, processConte
     if (parts.length > 1 && prefixes.includes(parts[0].toLowerCase())) {
       keyPath = parts.slice(1);
     }
-    
+
     for (const payload of searchPayloads) {
       let current = payload;
       let found = true;
@@ -6050,13 +6055,13 @@ function extractAndEvaluateVariables(script, stepInput, stepOutput, processConte
       }
       if (found) return current;
     }
-    
+
     const searchKey = keyPath[keyPath.length - 1];
     for (const payload of searchPayloads) {
       const foundVal = findKeyValueRecursive(payload, searchKey);
       if (foundVal !== undefined) return foundVal;
     }
-    
+
     return undefined;
   };
 
@@ -6069,7 +6074,7 @@ function extractAndEvaluateVariables(script, stepInput, stepOutput, processConte
   });
 
   const jsKeywords = new Set([
-    "true", "false", "null", "undefined", "if", "else", "return", "var", "let", "const", 
+    "true", "false", "null", "undefined", "if", "else", "return", "var", "let", "const",
     "function", "typeof", "instanceof", "new", "this", "class", "import", "export"
   ]);
   const words = script.match(/\b[a-zA-Z_$][a-zA-Z0-9_$]*\b/g) || [];
@@ -6078,7 +6083,7 @@ function extractAndEvaluateVariables(script, stepInput, stepOutput, processConte
   uniqueWords.forEach(word => {
     if (jsKeywords.has(word) || word.length < 2) return;
     if (uniquePaths.some(p => p.toLowerCase().split('.').includes(word.toLowerCase()))) return;
-    
+
     const val = lookupValue(word);
     if (val !== undefined && typeof val !== 'function') {
       results[word] = val;
@@ -6098,8 +6103,8 @@ function renderLiveExecDetail(workflow) {
     `;
   }
 
-  const steps = typeof window.WorkflowLive?.getSelectedProcessSteps === "function" 
-    ? window.WorkflowLive.getSelectedProcessSteps() 
+  const steps = typeof window.WorkflowLive?.getSelectedProcessSteps === "function"
+    ? window.WorkflowLive.getSelectedProcessSteps()
     : [];
 
   const processNode = typeof window.WorkflowLive?.getSelectedProcessNode === "function"
@@ -6392,46 +6397,46 @@ function renderLiveExecDetail(workflow) {
           ${outputHtml}
         </div>
 
-        ${(function() {
-          let dmNode = null;
-          if (node && node.decisionMatrix) {
-            dmNode = node;
-          } else {
-            const isDecisionType = (node && node.type === "decision") || 
-                                   (stepType && String(stepType).toLowerCase() === "decision");
-            if (isDecisionType) {
-              const possibleNames = [
-                node && node.callName,
-                node && node.id,
-                step.Name,
-                step.StepName,
-                step.ActivityName,
-                step.NodeName
-              ].filter(Boolean);
-              
-              for (const wfName of possibleNames) {
-                const targetWf = state.workflows.find(w => w.name === wfName || w.name.toLowerCase() === wfName.toLowerCase());
-                if (targetWf && targetWf.nodes) {
-                  const found = targetWf.nodes.find(sn => sn.decisionMatrix);
-                  if (found) {
-                    dmNode = found;
-                    break;
-                  }
+        ${(function () {
+        let dmNode = null;
+        if (node && node.decisionMatrix) {
+          dmNode = node;
+        } else {
+          const isDecisionType = (node && node.type === "decision") ||
+            (stepType && String(stepType).toLowerCase() === "decision");
+          if (isDecisionType) {
+            const possibleNames = [
+              node && node.callName,
+              node && node.id,
+              step.Name,
+              step.StepName,
+              step.ActivityName,
+              step.NodeName
+            ].filter(Boolean);
+
+            for (const wfName of possibleNames) {
+              const targetWf = state.workflows.find(w => w.name === wfName || w.name.toLowerCase() === wfName.toLowerCase());
+              if (targetWf && targetWf.nodes) {
+                const found = targetWf.nodes.find(sn => sn.decisionMatrix);
+                if (found) {
+                  dmNode = found;
+                  break;
                 }
               }
             }
           }
+        }
 
-          if (dmNode && dmNode.decisionMatrix) {
-            return `
+        if (dmNode && dmNode.decisionMatrix) {
+          return `
               <div style="margin-top:16px;">
                 <div style="font-weight:600; font-size:11px; color:var(--accent, #3b82f6); margin-bottom:8px;">Matched Decision Matrix:</div>
                 ${renderDecisionMatrix(dmNode, outputJson, inputJson)}
               </div>
             `;
-          }
-          return "";
-        })()}
+        }
+        return "";
+      })()}
       </div>
     `;
   });
@@ -6518,9 +6523,9 @@ function handleInternalNavigationEvent(event) {
   const target =
     link.dataset.analyzerNav && link.dataset.analyzerTarget
       ? {
-          kind: link.dataset.analyzerNav,
-          name: link.dataset.analyzerTarget,
-        }
+        kind: link.dataset.analyzerNav,
+        name: link.dataset.analyzerTarget,
+      }
       : navigation.readTarget(link.href);
   if (!target) return;
 
@@ -6674,27 +6679,27 @@ function selectTable(name, options = {}) {
   state.selectedTable = table;
   state.selectedEnum = null;
   state.selectedFunction = null;
-  
+
   state.activeMode = "database";
   if (state.dbSubmode !== "triggers" && state.dbSubmode !== "er") {
     state.dbSubmode = "tables";
   }
   state.activeTab = options.restore ? state.activeTab || "overview" : "overview";
-  
+
   els.workflowTitle.textContent = `Table: ${table.name}`;
   els.workflowSubtitle.textContent = `${table.columns.length} columns | ${table.primaryKeys.length} PKs | ${table.foreignKeys.length} FKs | ${table.triggers.length} triggers`;
-  
+
   state.panes.detail = true;
 
   const resultsTitleRow = document.querySelector(".results-title-row");
   const dbSubmodeContainer = document.querySelector("#dbSubmodeContainer");
   if (resultsTitleRow) resultsTitleRow.style.display = "none";
   if (dbSubmodeContainer) dbSubmodeContainer.style.display = "flex";
-  
+
   document.querySelectorAll("[data-db-submode]").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.dbSubmode === state.dbSubmode);
   });
-  
+
   applyFormState();
   applyModeState();
   applyLayoutState();
@@ -6717,10 +6722,10 @@ function selectEnum(name, options = {}) {
   state.enumTableSort = { field: "", direction: "asc" };
   state.enumTablePage = 1;
   state.activeTab = "overview";
-  
+
   els.workflowTitle.textContent = `Enum: ${en.name}`;
   els.workflowSubtitle.textContent = en.values ? `Custom Schema Enum | ${en.values.length} values` : `Table Enum Data | ${en.rows.length} rows`;
-  
+
   state.panes.detail = true;
   applyLayoutState();
 
@@ -6738,10 +6743,10 @@ function selectFunction(name, options = {}) {
   state.selectedTable = null;
   state.selectedEnum = null;
   state.activeTab = "overview";
-  
+
   els.workflowTitle.textContent = `Function/Proc: ${fn.name}`;
   els.workflowSubtitle.textContent = `Database PL/pgSQL Function | File: ${fn.sourcePath}`;
-  
+
   state.panes.detail = true;
   applyLayoutState();
 
@@ -6770,10 +6775,10 @@ function renderDatabaseResults() {
   if (state.dbSubmode === "tables" || state.dbSubmode === "er") {
     const filtered = state.dbTables.filter(t => {
       if (!query) return true;
-      return matches(t.name, query) || 
-             t.columns.some(c => matches(c.name, query));
+      return matches(t.name, query) ||
+        t.columns.some(c => matches(c.name, query));
     });
-    
+
     els.resultCount.textContent = String(filtered.length);
     if (!filtered.length) {
       els.resultsList.innerHTML = renderNoResults();
@@ -6843,7 +6848,7 @@ function renderDatabaseResults() {
       const directCount = t.directChildrenCount || 0;
       const totalCount = t.totalChildrenCount || 0;
       const childBadge = `<span class="badge" style="background: rgba(14, 165, 233, 0.12); color: #0ea5e9; font-weight: 600;">Child: ${directCount} (Total: ${totalCount})</span>`;
-      
+
       const paddingLeft = 10 + depth * 16;
       const prefix = depth > 0 ? '<span class="tree-connector" style="font-family: monospace; color: var(--accent); opacity: 0.6; margin-right: 4px;">└─ </span>' : '';
 
@@ -6934,9 +6939,9 @@ function renderDatabaseResults() {
   } else if (state.dbSubmode === "functions") {
     const filtered = state.dbFunctions.filter(f => {
       if (!query) return true;
-      return matches(f.name, query) || 
-             matches(f.sourcePath, query) ||
-             (f.code && matches(f.code, query));
+      return matches(f.name, query) ||
+        matches(f.sourcePath, query) ||
+        (f.code && matches(f.code, query));
     });
 
     els.resultCount.textContent = String(filtered.length);
@@ -6972,12 +6977,12 @@ function renderDatabaseResults() {
         });
       }
     }
-    
+
     const filtered = allTriggers.filter(trg => {
       if (!query) return true;
       return matches(trg.name, query) ||
-             matches(trg.tableName, query) ||
-             matches(trg.function, query);
+        matches(trg.tableName, query) ||
+        matches(trg.function, query);
     });
 
     els.resultCount.textContent = String(filtered.length);
@@ -7011,18 +7016,72 @@ function renderDatabaseResults() {
 }
 
 function renderTableDatadict(table) {
-  const colsHtml = table.columns.map(c => {
+  const colsHtml = table.columns.map((c, index) => {
     const isPk = table.primaryKeys.includes(c.name);
-    const isFk = table.foreignKeys.some(fk => fk.columns.includes(c.name));
-    const pkBadge = isPk ? `<span class="badge success" style="font-size:9px; padding:1px 4px; min-height:0; margin-left:4px;">PK</span>` : "";
-    const fkBadge = isFk ? `<span class="badge accent" style="font-size:9px; padding:1px 4px; min-height:0; margin-left:4px;">FK</span>` : "";
+    
+    // Find all FK References for this column
+    const fkRefs = [];
+    table.foreignKeys.forEach(fk => {
+      const idx = fk.columns.indexOf(c.name);
+      if (idx !== -1) {
+        const refCol = fk.referencedColumns[idx] || "";
+        fkRefs.push(`${fk.referencedTable}.${refCol}`);
+      }
+    });
+    const isFk = fkRefs.length > 0;
+
+    // Find all unique constraints containing this column
+    const uqNames = [];
+    if (table.uniqueKeys) {
+      table.uniqueKeys.forEach(uq => {
+        if (uq.fields.includes(c.name)) {
+          uqNames.push(uq.name);
+        }
+      });
+    }
+    const isUq = uqNames.length > 0;
+
+    // Attributes badges matching the screenshot styling
+    const attrBadges = [];
+    if (isPk) attrBadges.push(`<span style="display:inline-block; font-size:10px; font-weight:600; padding:2px 6px; border-radius:4px; background:#fef9c3; color:#a16207; border:1px solid #fef08a; margin-right:4px;">PK</span>`);
+    if (isFk) attrBadges.push(`<span style="display:inline-block; font-size:10px; font-weight:600; padding:2px 6px; border-radius:4px; background:#dbeafe; color:#1d4ed8; border:1px solid #bfdbfe; margin-right:4px;">FK</span>`);
+    if (isUq) attrBadges.push(`<span style="display:inline-block; font-size:10px; font-weight:600; padding:2px 6px; border-radius:4px; background:#f3e8ff; color:#6b21a8; border:1px solid #e9d5ff; margin-right:4px;">UQ</span>`);
+    const attrHtml = attrBadges.length > 0 ? attrBadges.join("") : `<span style="color:var(--muted); font-size:12px;">-</span>`;
+
+    // Unique Key constraint boxes
+    const uqConstraintHtml = isUq
+      ? uqNames.map(name => `<span style="display:inline-block; font-family:monospace; font-size:11px; padding:2px 8px; border-radius:6px; background:#faf5ff; color:#7e22ce; border:1px solid #f3e8ff;">${escapeHtml(name)}</span>`).join(" ")
+      : `<span style="color:var(--muted); font-size:12px;">-</span>`;
+
+    // FK Reference link/box. We will split FK reference targets into links.
+    const fkReferenceHtml = isFk
+      ? fkRefs.map(ref => {
+          const parts = ref.split(".");
+          const refTbl = parts[0];
+          return `<a href="#" data-table-link="${escapeAttr(refTbl)}" class="workflow-link" style="display:inline-block; font-family:monospace; font-size:11px; padding:2px 8px; border-radius:6px; background:#eff6ff; color:#1d4ed8; border:1px solid #dbeafe; text-decoration:none;">${escapeHtml(ref)}</a>`;
+        }).join(" ")
+      : ``;
+
+    // NOT NULL value
+    const notNullHtml = !c.nullable
+      ? `<span style="color:#b91c1c; font-weight:600;">Yes</span>`
+      : `<span style="color:var(--muted); font-size:12px;">No</span>`;
+
+    // Default value
+    const defaultHtml = (c.default !== undefined && c.default !== null && c.default !== "")
+      ? `<span style="font-family:monospace; font-size:11px; color:var(--muted);">${escapeHtml(c.default)}</span>`
+      : `<span style="color:var(--muted); font-size:12px;">-</span>`;
+
     return `
       <tr>
-        <td style="font-weight:600; color:var(--text);">${escapeHtml(c.name)}${pkBadge}${fkBadge}</td>
-        <td style="font-family:monospace; font-size:12px;">${escapeHtml(c.type)}</td>
-        <td>${c.nullable ? "Yes" : "No"}</td>
-        <td style="font-family:monospace; font-size:12px; color:var(--muted);">${escapeHtml(c.default || "-")}</td>
-        <td style="color:var(--text); font-size:12px;">${escapeHtml(c.comment || "-")}</td>
+        <td class="muted" style="font-size:11px; text-align:center; width:30px;">${index + 1}</td>
+        <td style="font-weight:600; font-family:monospace; color:var(--text);">${escapeHtml(c.name)}</td>
+        <td style="font-family:monospace; font-size:12px; color:#4f46e5;">${escapeHtml(c.type)}</td>
+        <td>${attrHtml}</td>
+        <td>${uqConstraintHtml}</td>
+        <td>${notNullHtml}</td>
+        <td>${fkReferenceHtml}</td>
+        <td>${defaultHtml}</td>
       </tr>
     `;
   }).join("");
@@ -7049,16 +7108,19 @@ function renderTableDatadict(table) {
       ${renderKv("Columns Count", table.columns.length)}
     </section>
 
-    <section class="detail-section">
+    <section class="detail-section" style="overflow-x:auto;">
       <h3>Columns Schema</h3>
-      <table class="table">
+      <table class="table" style="min-width: 800px;">
         <thead>
           <tr>
-            <th>Column</th>
-            <th>Type</th>
-            <th>Null?</th>
-            <th>Default</th>
-            <th>Comments</th>
+            <th style="text-align:center; width:30px;">#</th>
+            <th>COLUMN</th>
+            <th>TYPE</th>
+            <th>ATTRIBUTES</th>
+            <th>UNIQUE KEY</th>
+            <th>NOT NULL</th>
+            <th>FK REFERENCE</th>
+            <th>DEFAULT</th>
           </tr>
         </thead>
         <tbody>
@@ -7292,7 +7354,7 @@ function renderTableCrudMap(table) {
         ...callers.filter(c => c.columns && c.columns.includes(col.name)),
         ...tableLevelOps
       ];
-      
+
       let callersListHtml = "";
       if (colCallers.length === 0) {
         callersListHtml = `<span class="muted" style="font-size: 11px;">No callers touch this column directly.</span>`;
@@ -7402,7 +7464,7 @@ function renderTableCrudMap(table) {
 
     const rowsHtml = grouped.map(g => {
       const callerLink = renderCrudCallerLink(g.caller);
-      
+
       const opGroups = {};
       for (const item of g.items) {
         const op = normalizeOperation(item.operation);
@@ -7428,7 +7490,7 @@ function renderTableCrudMap(table) {
       const subRowsHtml = sortedOps.map((op, idx) => {
         const opData = opGroups[op];
         const colsArray = Array.from(opData.columns);
-        
+
         let colPills = "";
         if (colsArray.length > 0) {
           colPills = colsArray.map(col => `<span class="badge" style="font-size:10px; padding:1px 5px; min-height:0; margin: 1px;">${escapeHtml(col)}</span>`).join("");
@@ -7813,7 +7875,7 @@ function bindCrFormEvents(table) {
     }
 
     const reportMarkdown = generateColumnCrReport(table, colName, action, newVal);
-    
+
     reportOutput.textContent = reportMarkdown;
     reportContainer.style.display = "block";
     reportContainer.scrollIntoView({ behavior: "smooth" });
@@ -7825,7 +7887,7 @@ function bindCrFormEvents(table) {
       const action = actionSelect.value;
       const markdown = reportOutput.textContent;
       const filename = `${state.selectedTable.name}_${colName}_${action}_impact.md`;
-      
+
       const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8;" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
@@ -7842,6 +7904,574 @@ function bindCrFormEvents(table) {
         const oldText = copyBtn.textContent;
         copyBtn.textContent = "Copied!";
         setTimeout(() => { copyBtn.textContent = oldText; }, 1500);
+      });
+    });
+  }
+}
+function highlightSql(sql) {
+  if (!sql) return "";
+  let escaped = sql
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  const tokenRegex = /(--.*$|\/\*[\s\S]*?\*\/)|('(?:''|[^'])*')|(\b(?:SELECT|FROM|JOIN|LEFT|INNER|RIGHT|OUTER|ON|WHERE|AND|OR|IN|NOT|NULL|IS|INSERT|INTO|VALUES|UPDATE|SET|DELETE|BEGIN|COMMIT|ROLLBACK|TRANSACTION|AS|WITH|UNION|ALL|LIMIT|GROUP|BY|ORDER|HAVING|CREATE|TABLE|DROP|ALTER|ADD|COLUMN|CONSTRAINT|FOREIGN|KEY|REFERENCES|CASCADE|TRUNCATE)\b)|(\b\d+(?:\.\d+)?\b)/gmi;
+  return escaped.replace(tokenRegex, (match, comment, string, keyword, number) => {
+    if (comment) return `<span class="sql-comment">${comment}</span>`;
+    if (string) return `<span class="sql-string">${string}</span>`;
+    if (keyword) return `<span class="sql-keyword">${keyword.toUpperCase()}</span>`;
+    if (number) return `<span class="sql-number">${number}</span>`;
+    return match;
+  });
+}
+window.highlightSql = highlightSql;
+
+function formatTable(tableName, dialect, schemaName) {
+  const prefix = schemaName ? `${schemaName}.` : "";
+  return `${prefix}${tableName}`;
+}
+
+function formatColumn(tableName, columnName, dialect) {
+  return `${tableName}.${columnName}`;
+}
+
+function formatSqlValue(val) {
+  if (val === null || val === undefined || val === "") return "'?'";
+  if (typeof val === "number") return val;
+  return `'${String(val).replace(/'/g, "''")}'`;
+}
+
+function findJoinPath(startTable, filterField) {
+  const startTableLower = startTable.toLowerCase();
+  const filterFieldLower = filterField.toLowerCase();
+
+  // Find all tables that have the filterField column
+  const targetTables = state.dbTables.filter(t =>
+    t.columns.some(c => c.name.toLowerCase() === filterFieldLower)
+  ).map(t => t.name.toLowerCase());
+
+  if (targetTables.length === 0) return null;
+
+  // Prefer the direct/root tables first if multiple contain the key (e.g. application/op/accsim)
+  targetTables.sort((a, b) => {
+    const aIsDirect = filterFieldLower.startsWith(a) || a.startsWith(filterFieldLower.replace(/_id$/, ""));
+    const bIsDirect = filterFieldLower.startsWith(b) || b.startsWith(filterFieldLower.replace(/_id$/, ""));
+    if (aIsDirect && !bIsDirect) return -1;
+    if (!aIsDirect && bIsDirect) return 1;
+    return a.localeCompare(b);
+  });
+
+  // If start table already has the filter column, no joins needed
+  if (targetTables.includes(startTableLower)) {
+    return {
+      targetTable: startTableLower,
+      joins: [],
+      filterField: filterField
+    };
+  }
+
+  // BFS Queue
+  const queue = [{ currentTable: startTableLower, path: [] }];
+  const visited = new Set([startTableLower]);
+
+  while (queue.length > 0) {
+    const { currentTable, path } = queue.shift();
+
+    if (targetTables.includes(currentTable)) {
+      return {
+        targetTable: currentTable,
+        joins: path,
+        filterField: filterField
+      };
+    }
+
+    const currentTableObj = state.dbTables.find(t => t.name.toLowerCase() === currentTable);
+    if (!currentTableObj) continue;
+
+    // Outgoing edges (FKs defined in currentTable pointing to other tables)
+    for (const fk of currentTableObj.foreignKeys || []) {
+      const refT = fk.referencedTable.toLowerCase();
+      if (!visited.has(refT)) {
+        visited.add(refT);
+        const newPath = [...path, {
+          table: refT,
+          joinCol: fk.columns[0],
+          refTable: currentTable,
+          refCol: fk.referencedColumns[0],
+          direction: 'forward'
+        }];
+        queue.push({ currentTable: refT, path: newPath });
+      }
+    }
+
+    // Incoming edges (FKs defined in other tables pointing to currentTable)
+    const incoming = state.dbTables.filter(t =>
+      (t.foreignKeys || []).some(fk => fk.referencedTable.toLowerCase() === currentTable)
+    );
+    for (const incTable of incoming) {
+      const incT = incTable.name.toLowerCase();
+      if (!visited.has(incT)) {
+        visited.add(incT);
+        const fk = incTable.foreignKeys.find(fk => fk.referencedTable.toLowerCase() === currentTable);
+        const newPath = [...path, {
+          table: incT,
+          joinCol: fk.referencedColumns[0],
+          refTable: currentTable,
+          refCol: fk.columns[0],
+          direction: 'backward'
+        }];
+        queue.push({ currentTable: incT, path: newPath });
+      }
+    }
+  }
+
+  return null;
+}
+
+function findDependentTables(startTable) {
+  const startTableLower = startTable.toLowerCase();
+  const dependents = new Set();
+  const queue = [startTableLower];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    const children = state.dbTables.filter(t =>
+      (t.foreignKeys || []).some(fk => fk.referencedTable.toLowerCase() === current)
+    ).map(t => t.name.toLowerCase());
+
+    for (const child of children) {
+      if (!dependents.has(child) && child !== startTableLower) {
+        dependents.add(child);
+        queue.push(child);
+      }
+    }
+  }
+
+  return Array.from(dependents);
+}
+
+function topologicalSortForDelete(tables) {
+  const visited = new Set();
+  const order = [];
+
+  function visit(t) {
+    if (visited.has(t)) return;
+    visited.add(t);
+
+    const children = tables.filter(other =>
+      other !== t &&
+      (state.dbTables.find(tbl => tbl.name.toLowerCase() === other)?.foreignKeys || []).some(fk =>
+        fk.referencedTable.toLowerCase() === t
+      )
+    );
+
+    for (const child of children) {
+      visit(child);
+    }
+
+    order.push(t);
+  }
+
+  for (const t of tables) {
+    visit(t);
+  }
+
+  return order;
+}
+
+function generateSelectQuery(table, pathfinderResult, dialect, schemaName, paramValue) {
+  if (!pathfinderResult) return `-- No join path found to resolve the query.`;
+
+  const tblName = table.name || table;
+  const targetVal = formatSqlValue(paramValue);
+
+  let sql = `SELECT t0.*\n`;
+  sql += `FROM ${formatTable(tblName, dialect, schemaName)} t0`;
+
+  for (let i = 0; i < pathfinderResult.joins.length; i++) {
+    const step = pathfinderResult.joins[i];
+    const precedingAlias = `t${i}`;
+    const currentAlias = `t${i + 1}`;
+    sql += `\nJOIN ${formatTable(step.table, dialect, schemaName)} ${currentAlias} ON ${precedingAlias}.${step.joinCol} = ${currentAlias}.${step.refCol}`;
+  }
+
+  const targetAlias = `t${pathfinderResult.joins.length}`;
+  sql += `\nWHERE ${targetAlias}.${pathfinderResult.filterField} = ${targetVal};`;
+  return sql;
+}
+
+function buildDependencyTreeText(startTable, dependents) {
+  const depSet = new Set(dependents.map(d => d.toLowerCase()));
+  const visited = new Set();
+  
+  function getChildren(t) {
+    const tLower = t.toLowerCase();
+    return state.dbTables.filter(tbl => {
+      const nameLower = tbl.name.toLowerCase();
+      if (!depSet.has(nameLower)) return false;
+      return (tbl.foreignKeys || []).some(fk => fk.referencedTable.toLowerCase() === tLower);
+    }).map(tbl => tbl.name);
+  }
+  
+  let result = [];
+  
+  function traverse(t, prefix = "") {
+    const tLower = t.toLowerCase();
+    if (visited.has(tLower)) return;
+    visited.add(tLower);
+    
+    const children = getChildren(t);
+    children.forEach((child, idx) => {
+      const isLast = idx === children.length - 1;
+      const marker = isLast ? "└── " : "├── ";
+      result.push(`${prefix}${marker}${child}`);
+      const nextPrefix = prefix + (isLast ? "    " : "│   ");
+      traverse(child, nextPrefix);
+    });
+  }
+  
+  result.push(startTable);
+  traverse(startTable);
+  return result.join("\n");
+}
+
+function getPreText(preElement) {
+  if (!preElement) return "";
+  const lines = preElement.querySelectorAll(".code-line");
+  if (lines.length > 0) {
+    return Array.from(lines).map(line => line.textContent).join("\n");
+  }
+  return preElement.textContent || "";
+}
+
+function wrapWithLineNumbers(html) {
+  if (!html) return "";
+  const lines = html.split("\n");
+  if (lines.length > 1 && lines[lines.length - 1].trim() === "") {
+    lines.pop();
+  }
+  return lines.map((line, idx) => {
+    return `<span class="code-line" data-line-number="${idx + 1}">${line}</span>`;
+  }).join("");
+}
+
+function generateCreateTableScript(table, dialect, schemaName) {
+  const formattedTableName = formatTable(table.name, dialect, schemaName);
+  let sql = `CREATE TABLE ${formattedTableName} (\n`;
+  
+  const colLines = [];
+  table.columns.forEach(c => {
+    let line = `  ${c.name} ${c.type}`;
+    if (!c.nullable) {
+      line += " NOT NULL";
+    }
+    if (c.default !== undefined && c.default !== null && c.default !== "") {
+      line += ` DEFAULT ${c.default}`;
+    }
+    colLines.push(line);
+  });
+  
+  // Primary Keys
+  if (table.primaryKeys && table.primaryKeys.length > 0) {
+    if (dialect === "postgresql" || dialect === "databricks") {
+      colLines.push(`  CONSTRAINT pk_${table.name} PRIMARY KEY (${table.primaryKeys.join(", ")})`);
+    } else { // mysql
+      colLines.push(`  PRIMARY KEY (${table.primaryKeys.join(", ")})`);
+    }
+  }
+  
+  // Unique Keys
+  if (table.uniqueKeys && table.uniqueKeys.length > 0) {
+    table.uniqueKeys.forEach(uq => {
+      const fieldsStr = uq.fields.join(", ");
+      if (dialect === "postgresql" || dialect === "databricks") {
+        colLines.push(`  CONSTRAINT ${uq.name} UNIQUE (${fieldsStr})`);
+      } else { // mysql
+        colLines.push(`  UNIQUE KEY ${uq.name} (${fieldsStr})`);
+      }
+    });
+  }
+  
+  // Foreign Keys
+  if (table.foreignKeys && table.foreignKeys.length > 0) {
+    table.foreignKeys.forEach(fk => {
+      const colsStr = fk.columns.join(", ");
+      const refTableStr = formatTable(fk.referencedTable, dialect, schemaName);
+      const refColsStr = fk.referencedColumns.join(", ");
+      colLines.push(`  CONSTRAINT ${fk.constraintName} FOREIGN KEY (${colsStr}) REFERENCES ${refTableStr}(${refColsStr})`);
+    });
+  }
+  
+  sql += colLines.join(",\n");
+  sql += "\n);";
+  
+  return sql;
+}
+
+function generateCascadeDeleteScript(startTable, dependents, dialect, schemaName, filterField, paramValue) {
+  const tblName = startTable.name || startTable;
+  const allTables = [tblName.toLowerCase(), ...dependents];
+  const sorted = topologicalSortForDelete(allTables);
+  const targetVal = formatSqlValue(paramValue);
+
+  // Generate ASCII tree comment
+  const treeText = buildDependencyTreeText(tblName, dependents);
+  let sql = `/*\n`;
+  sql += `========================================================================\n`;
+  sql += `CASCADE DELETION SCRIPT SUMMARY\n`;
+  sql += `========================================================================\n`;
+  sql += `Total tables to delete: ${sorted.length}\n`;
+  sql += `Root table: ${tblName}\n\n`;
+  sql += `Deletion Hierarchy Tree:\n`;
+  sql += `${treeText}\n\n`;
+  sql += `Note: Tables are deleted in reverse topological order (leaf nodes first)\n`;
+  sql += `to respect foreign key constraints.\n`;
+  sql += `========================================================================\n`;
+  sql += `*/\n\n`;
+
+  const startTx = dialect === "mysql" ? "START TRANSACTION;" : "BEGIN;";
+  sql += `${startTx}\n\n`;
+
+  for (let idx = 0; idx < sorted.length; idx++) {
+    const table = sorted[idx];
+    const tableObj = state.dbTables.find(t => t.name.toLowerCase() === table);
+    if (!tableObj) continue;
+
+    const pathResult = findJoinPath(table, filterField);
+    if (!pathResult) {
+      sql += `-- [Table ${idx + 1} of ${sorted.length}] ERROR: No path from ${table} to filter field ${filterField}\n\n`;
+      continue;
+    }
+
+    const deleteFromStr = dialect === "mysql"
+      ? `DELETE del FROM ${formatTable(table, dialect, schemaName)} AS del`
+      : `DELETE FROM ${formatTable(table, dialect, schemaName)} AS del`;
+
+    sql += `-- [Table ${idx + 1} of ${sorted.length}] Delete dependent table: ${table}\n`;
+    if (pathResult.joins.length === 0) {
+      sql += `${deleteFromStr}\n`;
+      sql += `WHERE del.${filterField} = ${targetVal};\n\n`;
+    } else {
+      const firstStep = pathResult.joins[0];
+      sql += `${deleteFromStr}\n`;
+      sql += `WHERE del.${firstStep.joinCol} IN (\n`;
+      sql += `  SELECT t0.${firstStep.refCol}\n`;
+      sql += `  FROM ${formatTable(firstStep.table, dialect, schemaName)} t0`;
+
+      for (let i = 1; i < pathResult.joins.length; i++) {
+        const step = pathResult.joins[i];
+        const precedingAlias = `t${i - 1}`;
+        const currentAlias = `t${i}`;
+        sql += `\n  JOIN ${formatTable(step.table, dialect, schemaName)} ${currentAlias} ON ${precedingAlias}.${step.joinCol} = ${currentAlias}.${step.refCol}`;
+      }
+
+      const targetAlias = `t${pathResult.joins.length - 1}`;
+      sql += `\n  WHERE ${targetAlias}.${pathResult.filterField} = ${targetVal}\n`;
+      sql += `);\n\n`;
+    }
+  }
+
+  sql += `COMMIT;`;
+  return sql;
+}
+
+function renderTableQueryGen(table) {
+  const savedSchema = localStorage.getItem("workflowHelper.dbSchema") || "";
+  return `
+    <section class="detail-section">
+      <h3>Smart SQL Query & Script Generator</h3>
+      <p class="muted" style="margin-bottom:12px;">Generate SELECT queries, cascade delete scripts, or table creation DDL.</p>
+      
+      <div style="display:flex; flex-direction:column; gap:10px; padding:12px; border:1px solid var(--line); border-radius:8px; background:var(--surface-2);">
+        
+        <div style="margin-bottom: 6px;">
+          <label style="display:block; font-weight:600; margin-bottom:6px;">Action / Query Type</label>
+          <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
+            <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-weight:normal;">
+              <input type="radio" name="qgQueryType" value="select" checked> SELECT Query
+            </label>
+            <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-weight:normal;">
+              <input type="radio" name="qgQueryType" value="delete"> CASCADE DELETE
+            </label>
+            <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-weight:normal;">
+              <input type="radio" name="qgQueryType" value="create"> CREATE TABLE
+            </label>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <div style="flex:1 1 120px;">
+            <label style="display:block; font-weight:600; margin-bottom:4px;">Dialect</label>
+            <select id="qgDialectSelect" class="table-select" style="width:100%; height:34px; padding:0 8px; border:1px solid var(--line-strong); border-radius:6px; background:#fff;">
+              <option value="postgresql">PostgreSQL</option>
+              <option value="mysql">MySQL</option>
+              <option value="databricks">Databricks</option>
+            </select>
+          </div>
+          <div style="flex:1 1 120px;">
+            <label style="display:block; font-weight:600; margin-bottom:4px;">Schema Name</label>
+            <input id="qgSchemaInput" type="text" value="${escapeAttr(savedSchema)}" placeholder="e.g. db_name" style="width:100%; height:34px; padding:0 8px; border:1px solid var(--line-strong); border-radius:6px; background:#fff;">
+          </div>
+        </div>
+        
+        <div id="qgFilterInputsGroup" style="display:flex; flex-direction:column; gap:10px;">
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <div style="flex:1 1 150px;">
+              <label style="display:block; font-weight:600; margin-bottom:4px;">Filter Key Preset</label>
+              <select id="qgPresetSelect" class="table-select" style="width:100%; height:34px; padding:0 8px; border:1px solid var(--line-strong); border-radius:6px; background:#fff;">
+                <option value="application_id">application_id</option>
+                <option value="op_number">op_number</option>
+                <option value="accsim">accsim</option>
+                <option value="custom">Custom Field...</option>
+              </select>
+            </div>
+            <div style="flex:1 1 150px; display:none;" id="qgCustomKeyGroup">
+              <label style="display:block; font-weight:600; margin-bottom:4px;">Custom Key Name</label>
+              <input id="qgCustomKeyInput" type="text" placeholder="e.g. user_id" style="width:100%; height:34px; padding:0 8px; border:1px solid var(--line-strong); border-radius:6px; background:#fff;">
+            </div>
+          </div>
+          
+          <div>
+            <label style="display:block; font-weight:600; margin-bottom:4px;">Filter Parameter Value</label>
+            <input id="qgParamValueInput" type="text" placeholder="e.g. APP-0001, OP-123" style="width:100%; height:34px; padding:0 8px; border:1px solid var(--line-strong); border-radius:6px; background:#fff;">
+          </div>
+        </div>
+        
+        <button id="qgGenerateBtn" type="button" class="rebuild-button" style="margin-top:6px; background:var(--accent-2); color:#fff; border:0; min-height:38px; border-radius:8px; font-weight:bold; display:flex; align-items:center; justify-content:center; gap:6px;">
+          Generate Queries
+        </button>
+      </div>
+
+      <div id="qgResultsContainer" style="display:none; margin-top:16px;">
+        <div>
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+            <h4 id="qgResultTitle" style="margin:0;">Generated Query</h4>
+            <button id="qgCopyBtn" type="button" class="match-filter-chip" style="min-height:24px;">Copy SQL</button>
+          </div>
+          <pre id="qgResultOutput" class="code-block sql-code-block" style="white-space: pre-wrap; font-size:11px; max-height:400px; overflow-y:auto; background: #0f172a; color: #f8fafc; padding: 12px; border-radius: 6px; font-family: monospace;"></pre>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function bindQueryGenEvents(table) {
+  const queryTypeRadios = document.getElementsByName("qgQueryType");
+  const filterInputsGroup = document.getElementById("qgFilterInputsGroup");
+  const dialectSelect = document.getElementById("qgDialectSelect");
+  const schemaInput = document.getElementById("qgSchemaInput");
+  const presetSelect = document.getElementById("qgPresetSelect");
+  const customKeyGroup = document.getElementById("qgCustomKeyGroup");
+  const customKeyInput = document.getElementById("qgCustomKeyInput");
+  const paramInput = document.getElementById("qgParamValueInput");
+  const generateBtn = document.getElementById("qgGenerateBtn");
+  const resultsContainer = document.getElementById("qgResultsContainer");
+  const resultTitle = document.getElementById("qgResultTitle");
+  const resultOutput = document.getElementById("qgResultOutput");
+  const copyBtn = document.getElementById("qgCopyBtn");
+
+  if (!presetSelect || !customKeyGroup || !generateBtn) return;
+
+  const toggleInputs = () => {
+    let selectedType = "";
+    for (const r of queryTypeRadios) {
+      if (r.checked) {
+        selectedType = r.value;
+        break;
+      }
+    }
+    if (selectedType === "create") {
+      filterInputsGroup.style.display = "none";
+    } else {
+      filterInputsGroup.style.display = "flex";
+    }
+  };
+
+  queryTypeRadios.forEach(r => {
+    r.addEventListener("change", toggleInputs);
+  });
+
+  presetSelect.addEventListener("change", () => {
+    if (presetSelect.value === "custom") {
+      customKeyGroup.style.display = "block";
+    } else {
+      customKeyGroup.style.display = "none";
+    }
+  });
+
+  generateBtn.addEventListener("click", () => {
+    const dialect = dialectSelect.value;
+    const schema = schemaInput.value.trim();
+    localStorage.setItem("workflowHelper.dbSchema", schema);
+
+    let selectedType = "";
+    for (const r of queryTypeRadios) {
+      if (r.checked) {
+        selectedType = r.value;
+        break;
+      }
+    }
+
+    // Input validation for filters (only if not create table)
+    let filterField = "";
+    let paramVal = "";
+    if (selectedType !== "create") {
+      filterField = presetSelect.value === "custom" ? customKeyInput.value.trim() : presetSelect.value;
+      paramVal = paramInput.value.trim();
+      if (!filterField) {
+        alert("Please enter a filter field.");
+        return;
+      }
+    }
+
+    // Set loading state on button
+    generateBtn.disabled = true;
+    const oldBtnHtml = generateBtn.innerHTML;
+    generateBtn.innerHTML = `<span class="spinner-small"></span> Generating...`;
+
+    // Simulated 400ms loading timeout
+    setTimeout(() => {
+      let finalSql = "";
+      let titleText = "Generated Query";
+
+      if (selectedType === "create") {
+        titleText = "CREATE TABLE DDL Script";
+        finalSql = generateCreateTableScript(table, dialect, schema);
+      } else {
+        const path = findJoinPath(table.name, filterField);
+        if (!path) {
+          finalSql = `-- Pathfinder could not resolve a path from table "${table.name}" to column "${filterField}".`;
+          titleText = selectedType === "select" ? "SELECT Join Query" : "CASCADE DELETE Script";
+        } else {
+          if (selectedType === "select") {
+            titleText = "SELECT Join Query";
+            finalSql = generateSelectQuery(table, path, dialect, schema, paramVal);
+          } else {
+            titleText = "CASCADE DELETE Script";
+            const dependents = findDependentTables(table.name);
+            finalSql = generateCascadeDeleteScript(table, dependents, dialect, schema, filterField, paramVal);
+          }
+        }
+      }
+
+      // Highlight and wrap with line numbers
+      resultTitle.textContent = titleText;
+      resultOutput.innerHTML = wrapWithLineNumbers(highlightSql(finalSql));
+      resultsContainer.style.display = "block";
+
+      // Restore button state
+      generateBtn.disabled = false;
+      generateBtn.innerHTML = oldBtnHtml;
+
+      resultsContainer.scrollIntoView({ behavior: "smooth" });
+    }, 400);
+  });
+
+  if (copyBtn) {
+    copyBtn.addEventListener("click", () => {
+      navigator.clipboard.writeText(getPreText(resultOutput)).then(() => {
+        const old = copyBtn.textContent;
+        copyBtn.textContent = "Copied!";
+        setTimeout(() => { copyBtn.textContent = old; }, 1500);
       });
     });
   }
@@ -8034,6 +8664,12 @@ function renderDatabaseDetails() {
     }
     if (state.activeTab === "overview") {
       els.detailContent.innerHTML = renderTableDatadict(table);
+      els.detailContent.querySelectorAll("[data-table-link]").forEach(el => {
+        el.addEventListener("click", (e) => {
+          selectTable(el.dataset.tableLink);
+          e.preventDefault();
+        });
+      });
     } else if (state.activeTab === "node") {
       els.detailContent.innerHTML = renderTableTriggersAndFKs(table);
       // Bind click triggers/functions/FK table links inside the detail content
@@ -8052,7 +8688,7 @@ function renderDatabaseDetails() {
       });
     } else if (state.activeTab === "db") {
       els.detailContent.innerHTML = renderTableCrudMap(table);
-      
+
       els.detailContent.querySelectorAll("[data-func-link]").forEach(el => {
         el.addEventListener("click", (e) => {
           selectFunction(el.dataset.funcLink);
@@ -8090,6 +8726,9 @@ function renderDatabaseDetails() {
     } else if (state.activeTab === "inbound") {
       els.detailContent.innerHTML = renderTableCrGen(table);
       bindCrFormEvents(table);
+    } else if (state.activeTab === "query-gen") {
+      els.detailContent.innerHTML = renderTableQueryGen(table);
+      bindQueryGenEvents(table);
     }
   } else if (state.dbSubmode === "enums") {
     const en = state.selectedEnum;
@@ -8240,7 +8879,8 @@ function highlightSql(code) {
 }
 
 async function copyDiagramCode() {
-  const code = els.diagramCanvas.querySelector(".sql-code-block")?.textContent || "";
+  const pre = els.diagramCanvas.querySelector(".sql-code-block");
+  const code = pre ? getPreText(pre) : "";
   if (!code) return;
   const button = els.diagramCanvas.querySelector("[data-copy-diagram-code]");
   const oldText = button?.textContent;
@@ -8330,10 +8970,10 @@ function renderEnumDataTable(en) {
             <tr>
               <th class="enum-row-number">#</th>
               ${headers.map((header) => {
-                const isSorted = state.enumTableSort?.field === header;
-                const marker = isSorted ? (state.enumTableSort.direction === "desc" ? " ↓" : " ↑") : "";
-                return `<th><button type="button" data-enum-sort="${escapeAttr(header)}">${escapeHtml(header)}${marker}</button></th>`;
-              }).join("")}
+    const isSorted = state.enumTableSort?.field === header;
+    const marker = isSorted ? (state.enumTableSort.direction === "desc" ? " ↓" : " ↑") : "";
+    return `<th><button type="button" data-enum-sort="${escapeAttr(header)}">${escapeHtml(header)}${marker}</button></th>`;
+  }).join("")}
             </tr>
           </thead>
           <tbody>
@@ -8445,7 +9085,7 @@ function renderTableDependencyDiagram(table) {
     }
     const currTable = state.dbTables.find(t => t.name === curr.name);
     if (!currTable) continue;
-    
+
     const parentNames = unique((currTable.foreignKeys || []).map(fk => fk.referencedTable));
     for (const pName of parentNames) {
       if (!state.showEnumTables && pName.toLowerCase().startsWith("enum_")) {
@@ -8473,13 +9113,13 @@ function renderTableDependencyDiagram(table) {
     if (!state.showDeepHierarchy && curr.layer >= 1) {
       continue;
     }
-    
+
     const childNames = unique(
       state.dbTables
         .filter(t => (t.foreignKeys || []).some(fk => fk.referencedTable === curr.name))
         .map(t => t.name)
     );
-    
+
     for (const cName of childNames) {
       if (!state.showEnumTables && cName.toLowerCase().startsWith("enum_")) {
         continue;
@@ -8535,7 +9175,7 @@ function renderTableDependencyDiagram(table) {
   let wfY = 200;
   let tableStartY = 100;
 
-  const wfCallers = state.workflows.filter(wf => 
+  const wfCallers = state.workflows.filter(wf =>
     (wf.dbOperations || []).some(op => op.table === table.name)
   ).map(wf => wf.name).sort();
 
@@ -8543,10 +9183,10 @@ function renderTableDependencyDiagram(table) {
   if (showZoralCallers || showZboCallers) {
     for (const area of state.zboAreas) {
       const callsWfs = (area.zoralCalls || []).some(call => wfCallers.includes(call.workflow));
-      const callsTableDirect = (area.actions || []).some(action => 
+      const callsTableDirect = (area.actions || []).some(action =>
         (action.dbOperations || []).some(op => op.table === table.name)
       ) || (area.graphqlOperations || []).some(op => op.table === table.name);
-      
+
       if (callsWfs || callsTableDirect) {
         zboCallers.push(area.name);
       }
@@ -8584,10 +9224,10 @@ function renderTableDependencyDiagram(table) {
         .map(call => call.workflow)
         .filter(w => wfCallers.includes(w))
         .sort();
-      const callsDirect = (area.actions || []).some(action => 
+      const callsDirect = (area.actions || []).some(action =>
         (action.dbOperations || []).some(op => op.table === table.name)
       ) || (area.graphqlOperations || []).some(op => op.table === table.name);
-      
+
       const key = calledWfs.join(",") + (callsDirect ? "+direct" : "");
       if (!zboGroups[key]) {
         zboGroups[key] = {
@@ -8659,15 +9299,15 @@ function renderTableDependencyDiagram(table) {
     arr.forEach((tableName, idx) => {
       const originalY = tableStartY + (L - minLayer) * rowSpacing;
       const originalX = centerX - ((n - 1) * colSpacing) / 2 + idx * colSpacing;
-      
+
       const override = state.nodePositions?.database?.[`tableDep-${table.name}-${tableName}`];
       const x = override && Number.isFinite(override.x) ? override.x : originalX;
       const y = override && Number.isFinite(override.y) ? override.y : originalY;
-      
+
       const label = tableName;
       const w = Math.max(120, label.length * 6.5 + 45);
       nodeWidths[tableName] = w;
-      
+
       nodes.push({
         id: tableName,
         kind: tableName === table.name ? "center" : (L < 0 ? "parent" : "child"),
@@ -8686,7 +9326,7 @@ function renderTableDependencyDiagram(table) {
   for (const n of nodes) {
     const currentTable = state.dbTables.find(t => t.name === n.tableName);
     if (!currentTable) continue;
-    
+
     for (const fk of currentTable.foreignKeys || []) {
       if (nodeNames.has(fk.referencedTable) && fk.referencedTable !== n.id) {
         edges.push({
@@ -8708,11 +9348,11 @@ function renderTableDependencyDiagram(table) {
       const id = `trig-${f}`;
       const originalX = centerX - ((triggerFunctions.length - 1) * colSpacing) / 2 + idx * colSpacing;
       const originalY = triggerStartY;
-      
+
       const override = state.nodePositions?.database?.[`tableDep-${table.name}-${id}`];
       const x = override && Number.isFinite(override.x) ? override.x : originalX;
       const y = override && Number.isFinite(override.y) ? override.y : originalY;
-      
+
       const w = Math.max(120, f.length * 6.5 + 45);
       nodeWidths[id] = w;
       nodes.push({
@@ -8738,7 +9378,7 @@ function renderTableDependencyDiagram(table) {
   if (showZoralCallers || showZboCallers) {
     const wfGroupList = Object.values(wfGroups);
     const gap = 40;
-    
+
     const wfGroupWidths = wfGroupList.map(group => {
       const MAX_VISIBLE = 8;
       const visible = group.workflows.slice(0, MAX_VISIBLE);
@@ -8748,139 +9388,51 @@ function renderTableDependencyDiagram(table) {
       const maxLen = Math.max(...visible.map(w => w.length));
       return Math.max(120, maxLen * 6.5 + 45);
     });
-    
+
     const totalWfWidth = wfGroupWidths.reduce((sum, w) => sum + w, 0) + gap * (wfGroupList.length - 1);
     let startWfX = centerX - totalWfWidth / 2;
 
     if (showZoralCallers) {
       wfGroupList.forEach((group, idx) => {
-      const id = `wfGroup-${group.key}`;
-      const w = wfGroupWidths[idx];
-      
-      const MAX_VISIBLE = 8;
-      const visible = group.workflows.slice(0, MAX_VISIBLE);
-      if (group.workflows.length > MAX_VISIBLE) {
-        visible.push(`... and ${group.workflows.length - MAX_VISIBLE} more`);
-      }
-      
-      const h = Math.max(50, 20 + visible.length * 15);
-      const originalX = startWfX + w / 2;
-      startWfX += w + gap;
-      const originalY = wfY;
-      
-      const override = state.nodePositions?.database?.[`tableDep-${table.name}-${id}`];
-      const x = override && Number.isFinite(override.x) ? override.x : originalX;
-      const y = override && Number.isFinite(override.y) ? override.y : originalY;
-      
-      nodeWidths[id] = w;
-      nodes.push({
-        id,
-        kind: "zoralCall",
-        workflowName: group.workflows[0],
-        workflows: visible,
-        label: visible.join("\n"),
-        x,
-        y,
-        width: w,
-        height: h
-      });
+        const id = `wfGroup-${group.key}`;
+        const w = wfGroupWidths[idx];
 
-      const opsSet = new Set();
-      group.workflows.forEach(wfName => {
-        const wf = state.workflows.find(w => w.name === wfName);
-        if (wf) {
-          addOpsForTable(wf.dbOperations, table.name, opsSet);
+        const MAX_VISIBLE = 8;
+        const visible = group.workflows.slice(0, MAX_VISIBLE);
+        if (group.workflows.length > MAX_VISIBLE) {
+          visible.push(`... and ${group.workflows.length - MAX_VISIBLE} more`);
         }
-      });
-      const edgeLabel = operationEdgeLabel(opsSet, "calls DB");
 
-      edges.push({
-        from: id,
-        to: table.name,
-        kind: "caller-link",
-        label: edgeLabel
-      });
-      });
-    }
+        const h = Math.max(50, 20 + visible.length * 15);
+        const originalX = startWfX + w / 2;
+        startWfX += w + gap;
+        const originalY = wfY;
 
-    if (showZboCallers) {
-      const zboGroupList = Object.values(zboGroups);
-    const zboGroupWidths = zboGroupList.map(group => {
-      const MAX_VISIBLE = 8;
-      const visible = group.areas.slice(0, MAX_VISIBLE);
-      if (group.areas.length > MAX_VISIBLE) {
-        visible.push(`... and ${group.areas.length - MAX_VISIBLE} more`);
-      }
-      const maxLen = Math.max(...visible.map(a => a.length));
-      return Math.max(120, maxLen * 6.5 + 45);
-    });
+        const override = state.nodePositions?.database?.[`tableDep-${table.name}-${id}`];
+        const x = override && Number.isFinite(override.x) ? override.x : originalX;
+        const y = override && Number.isFinite(override.y) ? override.y : originalY;
 
-    const totalZboWidth = zboGroupWidths.reduce((sum, w) => sum + w, 0) + gap * (zboGroupList.length - 1);
-    let startZboX = centerX - totalZboWidth / 2;
+        nodeWidths[id] = w;
+        nodes.push({
+          id,
+          kind: "zoralCall",
+          workflowName: group.workflows[0],
+          workflows: visible,
+          label: visible.join("\n"),
+          x,
+          y,
+          width: w,
+          height: h
+        });
 
-    zboGroupList.forEach((group, idx) => {
-      const id = `zboGroup-${group.key}`;
-      const w = zboGroupWidths[idx];
-      
-      const MAX_VISIBLE = 8;
-      const visible = group.areas.slice(0, MAX_VISIBLE);
-      if (group.areas.length > MAX_VISIBLE) {
-        visible.push(`... and ${group.areas.length - MAX_VISIBLE} more`);
-      }
-      
-      const h = Math.max(50, 20 + visible.length * 15);
-      const originalX = startZboX + w / 2;
-      startZboX += w + gap;
-      const originalY = 80;
-      
-      const override = state.nodePositions?.database?.[`tableDep-${table.name}-${id}`];
-      const x = override && Number.isFinite(override.x) ? override.x : originalX;
-      const y = override && Number.isFinite(override.y) ? override.y : originalY;
-      
-      nodeWidths[id] = w;
-      nodes.push({
-        id,
-        kind: "zboCall",
-        zboAreaName: group.areas[0],
-        areas: visible,
-        label: visible.join("\n"),
-        x,
-        y,
-        width: w,
-        height: h
-      });
-
-      let connected = false;
-      wfGroupList.forEach(wfGroup => {
-        const hasCall = wfGroup.workflows.some(w => group.calledWfs.includes(w));
-        if (hasCall) {
-          edges.push({
-            from: id,
-            to: `wfGroup-${wfGroup.key}`,
-            kind: "caller-link",
-            label: operationEdgeLabel(
-              new Set(
-                wfGroup.workflows
-                  .filter((wfName) => group.calledWfs.includes(wfName))
-                  .flatMap((wfName) => {
-                    const wf = state.workflows.find((item) => item.name === wfName);
-                    return (wf?.dbOperations || [])
-                      .filter((op) => op.table === table.name && op.operation)
-                      .map((op) => normalizeOperation(op.operation).toUpperCase());
-                  }),
-              ),
-              "calls API",
-            )
-          });
-          connected = true;
-        }
-      });
-
-      if (!connected || group.callsDirect) {
-        const zboOpsSet = new Set();
-        addZboOpsForTable(group.areas, table.name, zboOpsSet);
-        addWorkflowOpsForTable(group.calledWfs, table.name, zboOpsSet);
-        const edgeLabel = operationEdgeLabel(zboOpsSet, "calls GQL");
+        const opsSet = new Set();
+        group.workflows.forEach(wfName => {
+          const wf = state.workflows.find(w => w.name === wfName);
+          if (wf) {
+            addOpsForTable(wf.dbOperations, table.name, opsSet);
+          }
+        });
+        const edgeLabel = operationEdgeLabel(opsSet, "calls DB");
 
         edges.push({
           from: id,
@@ -8888,8 +9440,96 @@ function renderTableDependencyDiagram(table) {
           kind: "caller-link",
           label: edgeLabel
         });
-      }
-    });
+      });
+    }
+
+    if (showZboCallers) {
+      const zboGroupList = Object.values(zboGroups);
+      const zboGroupWidths = zboGroupList.map(group => {
+        const MAX_VISIBLE = 8;
+        const visible = group.areas.slice(0, MAX_VISIBLE);
+        if (group.areas.length > MAX_VISIBLE) {
+          visible.push(`... and ${group.areas.length - MAX_VISIBLE} more`);
+        }
+        const maxLen = Math.max(...visible.map(a => a.length));
+        return Math.max(120, maxLen * 6.5 + 45);
+      });
+
+      const totalZboWidth = zboGroupWidths.reduce((sum, w) => sum + w, 0) + gap * (zboGroupList.length - 1);
+      let startZboX = centerX - totalZboWidth / 2;
+
+      zboGroupList.forEach((group, idx) => {
+        const id = `zboGroup-${group.key}`;
+        const w = zboGroupWidths[idx];
+
+        const MAX_VISIBLE = 8;
+        const visible = group.areas.slice(0, MAX_VISIBLE);
+        if (group.areas.length > MAX_VISIBLE) {
+          visible.push(`... and ${group.areas.length - MAX_VISIBLE} more`);
+        }
+
+        const h = Math.max(50, 20 + visible.length * 15);
+        const originalX = startZboX + w / 2;
+        startZboX += w + gap;
+        const originalY = 80;
+
+        const override = state.nodePositions?.database?.[`tableDep-${table.name}-${id}`];
+        const x = override && Number.isFinite(override.x) ? override.x : originalX;
+        const y = override && Number.isFinite(override.y) ? override.y : originalY;
+
+        nodeWidths[id] = w;
+        nodes.push({
+          id,
+          kind: "zboCall",
+          zboAreaName: group.areas[0],
+          areas: visible,
+          label: visible.join("\n"),
+          x,
+          y,
+          width: w,
+          height: h
+        });
+
+        let connected = false;
+        wfGroupList.forEach(wfGroup => {
+          const hasCall = wfGroup.workflows.some(w => group.calledWfs.includes(w));
+          if (hasCall) {
+            edges.push({
+              from: id,
+              to: `wfGroup-${wfGroup.key}`,
+              kind: "caller-link",
+              label: operationEdgeLabel(
+                new Set(
+                  wfGroup.workflows
+                    .filter((wfName) => group.calledWfs.includes(wfName))
+                    .flatMap((wfName) => {
+                      const wf = state.workflows.find((item) => item.name === wfName);
+                      return (wf?.dbOperations || [])
+                        .filter((op) => op.table === table.name && op.operation)
+                        .map((op) => normalizeOperation(op.operation).toUpperCase());
+                    }),
+                ),
+                "calls API",
+              )
+            });
+            connected = true;
+          }
+        });
+
+        if (!connected || group.callsDirect) {
+          const zboOpsSet = new Set();
+          addZboOpsForTable(group.areas, table.name, zboOpsSet);
+          addWorkflowOpsForTable(group.calledWfs, table.name, zboOpsSet);
+          const edgeLabel = operationEdgeLabel(zboOpsSet, "calls GQL");
+
+          edges.push({
+            from: id,
+            to: table.name,
+            kind: "caller-link",
+            label: edgeLabel
+          });
+        }
+      });
     }
   }
 
@@ -8953,10 +9593,10 @@ function renderTableDependencyDiagram(table) {
 
     const revKey = `${edge.to}:${edge.from}:${edge.kind || ""}:${edge.label || ""}`;
     // Look for a reverse edge in uniqueEdges
-    const hasReverse = uniqueEdges.some(e => 
-      e.from === edge.to && 
-      e.to === edge.from && 
-      (e.kind || "") === (edge.kind || "") && 
+    const hasReverse = uniqueEdges.some(e =>
+      e.from === edge.to &&
+      e.to === edge.from &&
+      (e.kind || "") === (edge.kind || "") &&
       (e.label || "") === (edge.label || "")
     );
 
@@ -9078,11 +9718,11 @@ function renderTableDependencyDiagram(table) {
           labelY = sy + (toBelow ? 34 : -26);
         }
       }
-    // Special routing for vertical orthogonal paths (ZBO -> Workflow -> Table -> Trigger)
+      // Special routing for vertical orthogonal paths (ZBO -> Workflow -> Table -> Trigger)
     } else if (Math.abs(fromNode.y - toNode.y) < 5) {
       // Same layer horizontal: use a simple bracket route (go down, horizontally, then up)
-      const sy = fromNode.y + h1/2;
-      const ey = toNode.y + h2/2;
+      const sy = fromNode.y + h1 / 2;
+      const ey = toNode.y + h2 / 2;
       const stepY = sy + 30 + Math.abs(lane);
       path = `M ${fromNode.x + lane} ${sy} L ${fromNode.x + lane} ${stepY} L ${toNode.x + lane} ${stepY} L ${toNode.x + lane} ${ey}`;
       labelX = (fromNode.x + toNode.x) / 2 + lane;
@@ -9090,8 +9730,8 @@ function renderTableDependencyDiagram(table) {
     } else {
       // Different layers: use vertical orthogonal routing
       const toBelow = fromNode.y < toNode.y;
-      const sy = fromNode.y + (toBelow ? h1/2 : -h1/2);
-      const ey = toNode.y + (toBelow ? -h2/2 : h2/2);
+      const sy = fromNode.y + (toBelow ? h1 / 2 : -h1 / 2);
+      const ey = toNode.y + (toBelow ? -h2 / 2 : h2 / 2);
       const sx = fromNode.x + lane;
       const ex = toNode.x + lane;
 
@@ -9108,11 +9748,11 @@ function renderTableDependencyDiagram(table) {
         const maxY = Math.max(fromNode.y, toNode.y);
         const intermediateNodes = nodes.filter(n => n.y > minY + 10 && n.y < maxY - 10);
 
-        let minX = Math.min(fromNode.x - w1/2, toNode.x - w2/2);
-        let maxX = Math.max(fromNode.x + w1/2, toNode.x + w2/2);
+        let minX = Math.min(fromNode.x - w1 / 2, toNode.x - w2 / 2);
+        let maxX = Math.max(fromNode.x + w1 / 2, toNode.x + w2 / 2);
         intermediateNodes.forEach(n => {
-          const left = n.x - n.width/2;
-          const right = n.x + n.width/2;
+          const left = n.x - n.width / 2;
+          const right = n.x + n.width / 2;
           if (left < minX) minX = left;
           if (right > maxX) maxX = right;
         });
@@ -9129,12 +9769,12 @@ function renderTableDependencyDiagram(table) {
       }
     }
 
-    const isEdgeSelected = state.selectedEdge && 
-                           state.selectedEdge.from === edge.from && 
-                           state.selectedEdge.to === edge.to;
+    const isEdgeSelected = state.selectedEdge &&
+      state.selectedEdge.from === edge.from &&
+      state.selectedEdge.to === edge.to;
     const isFromHighlighted = state.selectedNodeId === edge.from;
     const isToHighlighted = state.selectedNodeId === edge.to;
-    
+
     const edgeClasses = [
       "zbo-flow-edge",
       edge.kind === "trigger" ? "is-trigger" : "",
@@ -9159,7 +9799,7 @@ function renderTableDependencyDiagram(table) {
     const h = node.height;
     const x = node.x - w / 2;
     const y = node.y - h / 2;
-    
+
     let colorClass = "zbo-flow-api";
     let linkData = "";
     let iconHtml = "";
@@ -9201,8 +9841,8 @@ function renderTableDependencyDiagram(table) {
       labelHtml = escapeHtml(node.label);
     }
 
-    const isNodeActive = state.selectedNodeId === node.id || 
-                         (state.selectedEdge && (state.selectedEdge.from === node.id || state.selectedEdge.to === node.id));
+    const isNodeActive = state.selectedNodeId === node.id ||
+      (state.selectedEdge && (state.selectedEdge.from === node.id || state.selectedEdge.to === node.id));
     const activeNodeClass = isNodeActive ? "active" : "";
 
     const cursorStyle = state.enableNodeDrag ? "cursor: grab;" : "cursor: pointer;";
@@ -9390,8 +10030,8 @@ function renderErDiagram() {
   const tables = state.dbTables.filter(t => {
     if (!state.erCheckedTables.has(t.name)) return false;
     if (!query) return true;
-    return matches(t.name, query) || 
-           t.columns.some(c => matches(c.name, query));
+    return matches(t.name, query) ||
+      t.columns.some(c => matches(c.name, query));
   });
 
   if (!tables.length) {
@@ -9430,7 +10070,7 @@ function renderErDiagram() {
     const columnHeight = 20;
     const headerHeight = 32;
     const height = headerHeight + t.columns.length * columnHeight;
-    
+
     let maxColWidth = 180;
     t.columns.forEach(c => {
       const isPk = t.primaryKeys.includes(c.name);
@@ -9493,7 +10133,7 @@ function renderErDiagram() {
       ex = toRight;
     }
 
-    const path = `M ${sx} ${fromY} C ${(sx + ex)/2} ${fromY}, ${(sx + ex)/2} ${toY}, ${ex} ${toY}`;
+    const path = `M ${sx} ${fromY} C ${(sx + ex) / 2} ${fromY}, ${(sx + ex) / 2} ${toY}, ${ex} ${toY}`;
 
     return `
       <g class="zbo-flow-edge" style="opacity: 0.85;">
@@ -9518,7 +10158,7 @@ function renderErDiagram() {
       const isPk = n.table.primaryKeys.includes(c.name);
       const isFk = n.table.foreignKeys.some(fk => fk.columns.includes(c.name));
       const marker = isPk ? "🔑" : isFk ? "🔗" : "";
-      
+
       return `
         <rect x="${x}" y="${cy}" width="${w}" height="20" fill="${idx % 2 === 0 ? "var(--surface)" : "var(--surface-2)"}" style="stroke: var(--line);"></rect>
         <text x="${x + 8}" y="${cy + 14}" style="font-size:11px; fill:var(--text);">${escapeHtml(marker)} ${escapeHtml(c.name)}</text>
