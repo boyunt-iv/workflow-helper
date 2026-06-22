@@ -497,9 +497,9 @@
           <div class="live-modal-body">
             <p class="dim" style="font-size:12px; margin-top:0;">
               ${isExport
-                ? "Create a passcode for this PRD/PROD trace export. Keep it safely; the file cannot be imported without it."
-                : `This trace file is encrypted${options.fileName ? `: ${escapeHtml(options.fileName)}` : ""}. Enter the export passcode to import it.`
-              }
+          ? "Create a passcode for this PRD/PROD trace export. Keep it safely; the file cannot be imported without it."
+          : `This trace file is encrypted${options.fileName ? `: ${escapeHtml(options.fileName)}` : ""}. Enter the export passcode to import it.`
+        }
             </p>
             <div style="display:flex; flex-direction:column; gap:10px;">
               <label class="kv" style="align-items:flex-start;">
@@ -1991,34 +1991,34 @@
                 ${liveOutputHtml}
               </div>
               
-              ${(function() {
-                if (typeof window.renderDecisionMatrix === "function" && st.ctx && st.ctx.state && st.ctx.state.workflows) {
-                  let staticNode = null;
-                  const staticWf = findWorkflowByName(st.ctx.state.workflows, n.workflowName);
-                  if (staticWf && staticWf.nodes) {
-                    staticNode = staticWf.nodes.find(sn => sn.id === n.nodeId && sn.decisionMatrix);
-                    if (!staticNode) {
-                      staticNode = staticWf.nodes.find(sn => sn.decisionMatrix);
-                    }
+              ${(function () {
+              if (typeof window.renderDecisionMatrix === "function" && st.ctx && st.ctx.state && st.ctx.state.workflows) {
+                let staticNode = null;
+                const staticWf = findWorkflowByName(st.ctx.state.workflows, n.workflowName);
+                if (staticWf && staticWf.nodes) {
+                  staticNode = staticWf.nodes.find(sn => sn.id === n.nodeId && sn.decisionMatrix);
+                  if (!staticNode) {
+                    staticNode = staticWf.nodes.find(sn => sn.decisionMatrix);
                   }
-                  
-                  // Fallback: If not found in the current workflow, search by nodeId (e.g. if the node calls a decision matrix workflow of that name)
-                  if (!staticNode || !staticNode.decisionMatrix) {
-                    const targetWf = findWorkflowByName(st.ctx.state.workflows, n.nodeId);
-                    if (targetWf && targetWf.nodes) {
-                      staticNode = targetWf.nodes.find(sn => sn.decisionMatrix);
-                    }
-                  }
+                }
 
-                  if (staticNode && staticNode.decisionMatrix) {
-                    return `<div style="margin-top:16px;">
+                // Fallback: If not found in the current workflow, search by nodeId (e.g. if the node calls a decision matrix workflow of that name)
+                if (!staticNode || !staticNode.decisionMatrix) {
+                  const targetWf = findWorkflowByName(st.ctx.state.workflows, n.nodeId);
+                  if (targetWf && targetWf.nodes) {
+                    staticNode = targetWf.nodes.find(sn => sn.decisionMatrix);
+                  }
+                }
+
+                if (staticNode && staticNode.decisionMatrix) {
+                  return `<div style="margin-top:16px;">
                               <div style="font-weight:600; font-size:11px; color:var(--accent, #3b82f6); margin-bottom:8px;">Matched Decision Matrix:</div>
                               ${window.renderDecisionMatrix(staticNode, liveOutput, liveInput)}
                             </div>`;
-                  }
                 }
-                return "";
-              })()}
+              }
+              return "";
+            })()}
               
             </section>
           `;
@@ -2072,6 +2072,7 @@
             else if (opStr === "DELETE") badgeClass = "badge danger";
 
             const badgeHtml = `<span class="${badgeClass}" style="font-weight:600;">${escapeHtml(opStr)}</span>`;
+            const sqlBtn = opStr === "SELECT" ? `<button type="button" class="badge warning" onclick="window.showLiveSelectQuery('${escapeHtml(mo.op.table)}', ${mo.stepNo}); event.stopPropagation(); return false;" style="margin-left:6px; cursor:pointer; padding: 2px 4px; border:0; border-radius: 4px; line-height: 1;">SQL</button>` : "";
             const tableLink = `<a href="#" onclick="window.jumpToDbTable('${escapeHtml(mo.op.table)}'); return false;" class="workflow-link" style="font-family:monospace; font-weight:600;">${escapeHtml(mo.op.table)}</a>`;
 
             const usageBadge = mo.op.indirect
@@ -2093,7 +2094,7 @@
                     ${tableLink}
                   </div>
                 </td>
-                <td style="padding:8px 4px;">${badgeHtml}</td>
+                <td style="padding:8px 4px;">${badgeHtml}${sqlBtn}</td>
                 <td style="padding:8px 4px;">${executedInHtml}</td>
               </tr>`;
           });
@@ -2200,11 +2201,13 @@
 
                 const indirectIndicator = op.indirect ? `<span style="color:#4f46e5; font-weight:bold; margin-right:2px;" title="Indirect usage">&#8618;</span>` : "";
                 const titleText = op.indirect ? `Indirect via ${op.sourceWorkflow || op.viaWorkflow || ""} Node:${op.sourceNodeId || op.viaNode || ""}` : "Direct";
+                const sqlBadge = opStr === "SELECT" ? `<span onclick="window.showLiveSelectQuery('${escapeHtml(op.table)}', ${s.stepNo}); event.stopPropagation(); return false;" class="badge warning" style="font-size:9px; padding:1px 3px; font-weight:bold; cursor:pointer; margin-left:4px;">SQL</span>` : "";
 
                 return `<span title="${escapeHtml(titleText)}" style="display:inline-flex; align-items:center; gap:4px; margin-right:8px; font-size:10px; background:rgba(255,255,255,0.03); padding:2px 6px; border-radius:4px; border: 1px solid rgba(255,255,255,0.05); margin-top:2px; cursor:help;">
                   ${indirectIndicator}
                   <span onclick="window.jumpToDbTable('${escapeHtml(op.table)}'); event.stopPropagation(); return false;" style="font-family:monospace; font-weight:600; cursor:pointer; color:#3b82f6; text-decoration:underline;">${escapeHtml(op.table)}</span>
                   <span class="${badgeClass}" style="font-size:9px; padding:1px 3px; font-weight:bold;">${escapeHtml(opStr)}</span>
+                  ${sqlBadge}
                 </span>`;
               }).join("");
               dbInfoHtml = `<div style="margin-top:4px; display:flex; flex-wrap:wrap; gap:4px;">${chips}</div>`;
@@ -2302,12 +2305,12 @@
       setBridge("no token — click bookmarklet", false);
       return;
     }
-    
+
     // If already running, cancel the active task before initiating a new one
     if (activeAutoFetches > 0 || requestQueue.length > 0) {
       stopFetching();
     }
-    
+
     configureBridge();
 
     const tag = collectTagFilter();
@@ -2979,20 +2982,20 @@
       : `<span class="dim" style="font-size:11px;">(Unknown / End of flow)</span>`;
     const varsRows = evaluatedVars
       ? Object.entries(evaluatedVars).map(([key, value]) => {
-          let valText;
-          if (value && typeof value === "object") {
-            const str = JSON.stringify(value);
-            valText = str.length > 60 ? (Array.isArray(value) ? `[... ${value.length} items]` : `{... ${Object.keys(value).length} keys}`) : str;
-          } else {
-            valText = String(value);
-          }
-          return `
+        let valText;
+        if (value && typeof value === "object") {
+          const str = JSON.stringify(value);
+          valText = str.length > 60 ? (Array.isArray(value) ? `[... ${value.length} items]` : `{... ${Object.keys(value).length} keys}`) : str;
+        } else {
+          valText = String(value);
+        }
+        return `
             <div class="live-condition-var-row">
               <span>${escapeHtml(key)}</span>
               <strong>${escapeHtml(valText)}</strong>
             </div>
           `;
-        }).join("")
+      }).join("")
       : `<div class="dim" style="font-size:11px;">(No variables could be extracted/evaluated from current payloads)</div>`;
 
     return `
@@ -3134,7 +3137,8 @@
         const opsList = [...entry.ops].sort();
         const opsSuffix = opsList.length > 0 ? ` [${opsList.join(", ")}]` : "";
         const indirectMarker = entry.indirect ? `<span style="color:#4f46e5; font-weight:bold; margin-right:2px;" title="Indirect via: ${escapeHtml([...entry.details].join(' | '))}">&#8618;</span>` : "";
-        return `<a href="#" onclick="window.jumpToDbTable('${escapeHtml(tbl)}'); document.getElementById('liveStepModal').classList.remove('active'); return false;" class="live-modal-nav-btn" style="text-decoration:none; display:inline-flex; align-items:center; gap:2px;" title="${entry.indirect ? `Indirect via: ${escapeHtml([...entry.details].join(' | '))}` : 'Direct usage'}">${indirectMarker}Table: ${escapeHtml(tbl)}${escapeHtml(opsSuffix)} 💾</a>`;
+        const sqlLink = entry.ops.has("SELECT") ? `<button onclick="window.showLiveSelectQuery('${escapeHtml(tbl)}', ${stepNo}); event.stopPropagation(); return false;" class="badge warning" style="cursor:pointer; margin-left:6px; border:0; border-radius:4px; padding:2px 4px; line-height:1; font-family:inherit;">SQL</button>` : "";
+        return `<span class="live-modal-nav-btn" style="display:inline-flex; align-items:center; gap:2px; text-decoration:none; padding:4px 10px;" title="${entry.indirect ? `Indirect via: ${escapeHtml([...entry.details].join(' | '))}` : 'Direct usage'}">${indirectMarker}<a href="#" onclick="window.jumpToDbTable('${escapeHtml(tbl)}'); document.getElementById('liveStepModal').classList.remove('active'); return false;" style="color:#cbd5e1; text-decoration:none;">Table: ${escapeHtml(tbl)}${escapeHtml(opsSuffix)} 💾</a>${sqlLink}</span>`;
       }).join(" ");
     }
 
@@ -3416,9 +3420,9 @@
 
       const exportPayload = encryptExport
         ? await encryptTracePayload(st.graph.nodes, exportPasscode, {
-            environment: selectedEnv ? { key: selectedEnv.key, label: selectedEnv.label } : null,
-            processCount: st.graph.nodes.length,
-          })
+          environment: selectedEnv ? { key: selectedEnv.key, label: selectedEnv.label } : null,
+          processCount: st.graph.nodes.length,
+        })
         : st.graph.nodes;
       const json = JSON.stringify(exportPayload, null, 2);
       const blob = new Blob([json], { type: "application/json;charset=utf-8" });
@@ -3515,3 +3519,197 @@
   };
   root.WorkflowLive = Object.assign(root.WorkflowLive || {}, api);
 })(window);
+
+window.showLiveSelectQuery = function (tableName, stepNo) {
+  const live = window.WorkflowLive;
+  if (!live) return;
+  const n = live.getSelectedProcessNode();
+  if (!n) return;
+
+  const steps = live.getSelectedProcessSteps();
+  const step = stepNo ? steps[stepNo - 1] : null;
+
+  const getPayloadObj = (val) => {
+    if (val === null || val === undefined) return null;
+    if (typeof val === "string") {
+      try { return JSON.parse(val); } catch (_) { return val; }
+    }
+    return val;
+  };
+
+  const processTags = {};
+  const rawObj = n.raw || {};
+  const rawTags = rawObj.ProcessTags || rawObj.Tags || (rawObj.Request && (rawObj.Request.ProcessTags || rawObj.Request.Tags));
+  if (Array.isArray(rawTags)) {
+    rawTags.forEach(t => {
+      if (t && t.Key && t.Value) processTags[t.Key] = t.Value;
+    });
+  } else if (rawTags && typeof rawTags === "object") {
+    Object.assign(processTags, rawTags);
+  }
+  const req = rawObj.Request || {};
+  if (req.ApplicationId) processTags.ApplicationId = req.ApplicationId;
+  if (req.OpLoansId) processTags.OpLoansId = req.OpLoansId;
+
+  const stepInput = step ? getPayloadObj(step.InputJson || step.Input || step.Variables || step.WorkflowInputJson || step.workflowInputJson) : null;
+  const stepOutput = step ? getPayloadObj(step.OutputJson || step.Output || step.Result || step.WorkflowOutputJson || step.workflowOutputJson) : null;
+
+  const payloads = [processTags, stepInput, stepOutput];
+  const possibleFields = ["application_id", "op_number", "accsim", "id"];
+
+  let detectedField = "application_id";
+  let detectedValue = "";
+
+  const findValueSmart = (obj, targetFields) => {
+    if (!obj || typeof obj !== "object") return null;
+    const queue = [obj];
+    const visited = new Set();
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (visited.has(current)) continue;
+      visited.add(current);
+
+      for (const field of targetFields) {
+        const fieldNorm = field.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const aliases = [];
+        if (field === "application_id") {
+          aliases.push("applicationno", "appid");
+        } else if (field === "op_number") {
+          aliases.push("oploansid", "opno");
+        }
+
+        for (const [k, v] of Object.entries(current)) {
+          const kNorm = k.toLowerCase().replace(/[^a-z0-9]/g, "");
+          const isMatch = kNorm === fieldNorm || aliases.includes(kNorm);
+
+          if (isMatch && v !== null && v !== undefined && v !== "") {
+            if (typeof v !== "object") {
+              return { field, value: v };
+            }
+          }
+        }
+      }
+
+      for (const v of Object.values(current)) {
+        if (v && typeof v === "object") {
+          queue.push(v);
+        }
+      }
+    }
+    return null;
+  };
+
+  for (const payload of payloads) {
+    const matched = findValueSmart(payload, possibleFields);
+    if (matched) {
+      detectedField = matched.field;
+      detectedValue = matched.value;
+      break;
+    }
+  }
+
+  let modal = document.getElementById("liveSqlModal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "liveSqlModal";
+    modal.className = "live-modal-overlay";
+    document.body.appendChild(modal);
+  }
+
+  const savedSchema = localStorage.getItem("workflowHelper.dbSchema") || "";
+  const savedDialect = localStorage.getItem("workflowHelper.dbDialect") || "postgresql";
+
+  const renderModalContent = () => {
+    const currentDialect = document.getElementById("liveSqlDialectSelect")?.value || savedDialect;
+    const currentSchema = document.getElementById("liveSqlSchemaInput")?.value !== undefined ? document.getElementById("liveSqlSchemaInput").value.trim() : savedSchema;
+
+    localStorage.setItem("workflowHelper.dbDialect", currentDialect);
+    localStorage.setItem("workflowHelper.dbSchema", currentSchema);
+
+    let sqlQuery = "";
+    if (typeof window.findJoinPath === "function" && typeof window.generateSelectQuery === "function") {
+      const pathResult = window.findJoinPath(tableName, detectedField);
+      if (pathResult) {
+        sqlQuery = window.generateSelectQuery(tableName, pathResult, currentDialect, currentSchema, detectedValue);
+      } else {
+        sqlQuery = `-- Pathfinder could not resolve a path from table "${tableName}" to column "${detectedField}".`;
+      }
+    } else {
+      sqlQuery = `-- Error: findJoinPath or generateSelectQuery is not loaded in the window context.`;
+    }
+
+    modal.innerHTML = `
+      <div class="live-modal-card" style="max-width: 800px; height: auto; max-height: 90vh;">
+        <div class="live-modal-header">
+          <h3 class="live-modal-title">Generated SQL Query (SELECT)</h3>
+          <button class="live-modal-close" onclick="document.getElementById('liveSqlModal').classList.remove('active')">&times;</button>
+        </div>
+        <div class="live-modal-body" style="gap: 12px; padding: 16px;">
+          <div style="display:flex; flex-direction:column; gap:10px; padding:12px; border:1px solid rgba(255,255,255,0.08); border-radius:8px; background:rgba(30,41,59,0.3);">
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+              <div style="flex:1 1 120px;">
+                <label style="display:block; font-size:11px; font-weight:600; margin-bottom:4px; color:#cbd5e1;">Dialect</label>
+                <select id="liveSqlDialectSelect" class="live-modal-nav-btn" style="width:100%; height:32px; background:#0f172a; padding:0 8px;">
+                  <option value="postgresql" ${currentDialect === "postgresql" ? "selected" : ""}>PostgreSQL</option>
+                  <option value="mysql" ${currentDialect === "mysql" ? "selected" : ""}>MySQL</option>
+                  <option value="databricks" ${currentDialect === "databricks" ? "selected" : ""}>Databricks</option>
+                </select>
+              </div>
+              <div style="flex:1 1 120px;">
+                <label style="display:block; font-size:11px; font-weight:600; margin-bottom:4px; color:#cbd5e1;">Schema Name</label>
+                <input id="liveSqlSchemaInput" type="text" value="${escapeAttr(currentSchema)}" placeholder="e.g. db_name" style="width:100%; height:32px; background:#0f172a; border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:0 8px; color:#fff; font-size:12px;">
+              </div>
+            </div>
+            
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+              <div style="flex:1 1 150px;">
+                <label style="display:block; font-size:11px; font-weight:600; margin-bottom:4px; color:#cbd5e1;">Filter Field</label>
+                <input id="liveSqlFieldInput" type="text" value="${escapeAttr(detectedField)}" readonly style="width:100%; height:32px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.05); border-radius:6px; padding:0 8px; color:#94a3b8; font-size:12px; font-family:monospace;">
+              </div>
+              <div style="flex:1 1 150px;">
+                <label style="display:block; font-size:11px; font-weight:600; margin-bottom:4px; color:#cbd5e1;">Parameter Value</label>
+                <input id="liveSqlValueInput" type="text" value="${escapeAttr(detectedValue)}" placeholder="e.g. APP-001" style="width:100%; height:32px; background:#0f172a; border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:0 8px; color:#fff; font-size:12px;">
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+              <h4 style="margin:0; font-size:13px; color:#94a3b8;">SQL Code</h4>
+              <button id="liveSqlCopyBtn" type="button" class="live-modal-nav-btn" style="min-height:24px; padding:2px 8px;">Copy SQL</button>
+            </div>
+            <pre id="liveSqlOutput" class="code-block" style="white-space: pre-wrap; font-size:11px; max-height:280px; overflow-y:auto; background: #020617; color: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05); font-family: monospace; margin: 0;"></pre>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const outputEl = document.getElementById("liveSqlOutput");
+    if (typeof window.highlightSql === "function") {
+      outputEl.innerHTML = window.highlightSql(sqlQuery);
+    } else {
+      outputEl.textContent = sqlQuery;
+    }
+
+    document.getElementById("liveSqlDialectSelect").addEventListener("change", renderModalContent);
+    document.getElementById("liveSqlSchemaInput").addEventListener("input", renderModalContent);
+    document.getElementById("liveSqlValueInput").addEventListener("input", (e) => {
+      detectedValue = e.target.value;
+      renderModalContent();
+    });
+
+    document.getElementById("liveSqlCopyBtn").addEventListener("click", () => {
+      const btn = document.getElementById("liveSqlCopyBtn");
+      navigator.clipboard.writeText(sqlQuery).then(() => {
+        const old = btn.textContent;
+        btn.textContent = "Copied!";
+        setTimeout(() => { btn.textContent = old; }, 1500);
+      });
+    });
+  };
+
+  renderModalContent();
+  modal.classList.add("active");
+};
+
