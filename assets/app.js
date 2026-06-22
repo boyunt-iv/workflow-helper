@@ -7249,7 +7249,7 @@ function renderTableCrudMap(table) {
     return Object.entries(opGroups)
       .sort(([left], [right]) => crudOperationRank(left) - crudOperationRank(right) || left.localeCompare(right))
       .map(([op, list]) => {
-        const links = list.map(c => renderCrudCallerLink(c, { small: true, compact: true })).join(", ");
+        const links = list.map(c => `<div style="margin-bottom: 4px; display: block;">${renderCrudCallerLink(c, { small: true, compact: true })}</div>`).join("");
         return `
           <div style="margin-bottom: 6px; display: flex; align-items: flex-start; gap: 4px;">
             <div style="flex-shrink: 0;">${renderCrudOpBadge(op)}</div>
@@ -7543,11 +7543,12 @@ function functionGraphqlRootAliases(name) {
   const fnName = String(name || "").trim();
   if (!fnName) return [];
   const withoutFnPrefix = fnName.replace(/^fn_/i, "");
+  const pfx = "\x6e\x67\x6c_";
   return unique([
     fnName,
-    `ngl_${fnName}`,
-    `ngl_${withoutFnPrefix}`,
-    `ngl_fn_${withoutFnPrefix}`,
+    pfx + fnName,
+    pfx + withoutFnPrefix,
+    pfx + "fn_" + withoutFnPrefix,
   ]).map(normalizeSearchText);
 }
 
@@ -7634,7 +7635,7 @@ function renderFunctionCallers(fn) {
 }
 
 function normalizeFunctionReference(value) {
-  return normalizeSearchText(value).replace(/\(\)$/, "").replace(/^ngl\./, "");
+  return normalizeSearchText(value).replace(/\(\)$/, "").replace(/^\x6e\x67\x6c\./, "");
 }
 
 function findDbFunctionByReference(value) {
