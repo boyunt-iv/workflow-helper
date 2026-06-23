@@ -1064,6 +1064,12 @@ function syncSearchStateFromForm() {
 }
 
 function setMode(mode) {
+  const previousMode = state.activeMode;
+  if (mode === previousMode) return;
+  if (previousMode === "live" && mode !== "live" && window.WorkflowLive) {
+    window.WorkflowLive.deactivate();
+  }
+
   state.activeMode = mode;
   state.selectedNodeId = null;
   state.selectedEdge = null;
@@ -1074,7 +1080,6 @@ function setMode(mode) {
   applyModeState();
   saveState();
 
-  if (window.WorkflowLive) window.WorkflowLive.deactivate();
   if (state.activeMode === "live") {
     const resultsTitleRow = document.querySelector(".results-title-row");
     const dbSubmodeContainer = document.querySelector("#dbSubmodeContainer");
