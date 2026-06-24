@@ -205,6 +205,7 @@ function init() {
   const urlParams = new URLSearchParams(window.location.search);
   const urlWorkflow = urlParams.get("workflow");
   const urlZbo = urlParams.get("zbo");
+  const urlNode = urlParams.get("node");
   if (urlWorkflow) {
     state.query = urlWorkflow;
     state.searchScope = "workflow";
@@ -253,11 +254,12 @@ function init() {
     state.workflows.find((workflow) => workflow.name === state.selectedWorkflow?.name) ||
     state.workflows.find((workflow) => workflow.name === "Adw_UpdateApplication") ||
     state.workflows[0];
-  if (preferred) selectWorkflow(preferred.name, { restore: true, preserveSearch: Boolean(urlWorkflow) });
+  if (preferred) selectWorkflow(preferred.name, { restore: true, preserveSearch: Boolean(urlWorkflow), nodeId: urlWorkflow ? urlNode : null });
   updatePageTitle();
 }
 
 function renderIndexStatus() {
+  const dbSummary = getDatabaseIndexSummary();
   els.indexStatus.innerHTML = `
     <div class="status-group">
       <span class="status-title">Zoral</span>
@@ -272,13 +274,60 @@ function renderIndexStatus() {
     </div>
     <div class="status-group">
       <span class="status-title">Database</span>
-      <span class="status-row"><span>Tables</span><span>${escapeHtml(index.meta.dbTableCount || state.dbTables.length)}</span></span>
+      <span class="status-row"><span>Tables</span><span>${escapeHtml(dbSummary.tables)}</span></span>
+      <span class="status-row"><span>Functions</span><span>${escapeHtml(dbSummary.functions)}</span></span>
+      <span class="status-row"><span>Stored procs</span><span>${escapeHtml(dbSummary.storedProcedures)}</span></span>
+      <span class="status-row"><span>Triggers</span><span>${escapeHtml(dbSummary.triggers)}</span></span>
     </div>
     <div class="status-group">
       <span class="status-title">Generated</span>
       <span>${escapeHtml(formatDate(index.meta.generatedAt))}</span>
     </div>
   `;
+}
+
+function getDatabaseIndexSummary() {
+  const routineCounts = countDatabaseRoutines(state.dbFunctions);
+  return {
+    tables: index.meta.dbTableCount ?? state.dbTables.length,
+    functions: index.meta.dbFunctionCount ?? routineCounts.functions,
+    storedProcedures: index.meta.dbStoredProcedureCount ?? routineCounts.storedProcedures,
+    triggers: index.meta.dbTriggerCount ?? countDatabaseTriggers(state.dbTables),
+  };
+}
+
+function countDatabaseRoutines(routines) {
+  const counts = { functions: 0, storedProcedures: 0 };
+  for (const routine of routines || []) {
+    if (databaseRoutineKind(routine) === "procedure") counts.storedProcedures += 1;
+    else counts.functions += 1;
+  }
+  return counts;
+}
+
+function databaseRoutineKind(routine) {
+  const kind = normalizeSearchText(routine?.kind);
+  if (kind === "procedure") return "procedure";
+  if (kind === "function") return "function";
+  const source = normalizeSearchText(routine?.sourcePath);
+  return source.includes("procedure_") ? "procedure" : "function";
+}
+
+function countDatabaseTriggers(tables) {
+  const keys = new Set();
+  for (const table of tables || []) {
+    for (const trigger of table.triggers || []) {
+      const key = [
+        trigger.name,
+        trigger.table || table.name,
+        trigger.timing,
+        trigger.events,
+        trigger.function,
+      ].map((value) => normalizeSearchText(value)).join(":");
+      keys.add(key);
+    }
+  }
+  return keys.size;
 }
 
 function renderIndexMissing() {
@@ -2228,6 +2277,7 @@ function selectWorkflow(name, options = {}) {
   const previousNodeId = state.selectedNodeId;
   const previousTab = state.activeTab;
   state.selectedWorkflow = workflow;
+  state.highlightedNodeId = options.nodeId || null;
   state.selectedNodeId =
     options.restore && workflow.nodes.some((node) => node.id === previousNodeId)
       ? previousNodeId
@@ -2249,6 +2299,7 @@ function selectWorkflow(name, options = {}) {
 function selectNode(nodeId) {
   state.selectedNodeId = state.selectedNodeId === nodeId ? null : nodeId;
   state.selectedEdge = null;
+  state.highlightedNodeId = null;
   const isLiveHighlighted = state.liveHighlightedWorkflow &&
     state.liveHighlightedWorkflow === state.selectedWorkflow?.name;
   state.activeTab = isLiveHighlighted ? "live-exec" : "node";
@@ -4223,6 +4274,91 @@ function oppositeSide(side) {
   return "left";
 }
 
+function isZoralNodeSearchMatch(node, allNodeOps) {
+  if (!state.query) return false;
+
+  const queryNormalized = state.query.toLowerCase().trim();
+  if (state.selectedWorkflow && queryNormalized === state.selectedWorkflow.name.toLowerCase().trim()) {
+    if (state.searchScope === "workflow" || state.searchScope === "workflowIndirect") {
+      return false;
+    }
+  }
+
+  const query = state.query;
+
+  if (state.searchScope === "code") {
+    return (
+      matches(node.inputScript || "", query) ||
+      matches(node.outputScript || "", query) ||
+      matches(node.conditionScript || "", query)
+    );
+  }
+
+  if (state.searchScope === "table") {
+    return allNodeOps.some(op => matches(op.table || "", query));
+  }
+
+  if (state.searchScope === "graphql") {
+    return allNodeOps.some(op => 
+      matches(op.table || "", query) ||
+      matches(op.operation || "", query) ||
+      matches(op.operationName || "", query)
+    );
+  }
+
+  if (state.searchScope === "field") {
+    const opFieldMatch = allNodeOps.some(op => (op.columns || []).some(col => matches(col, query)));
+    if (opFieldMatch) return true;
+    
+    const inputMatch = (node.inputRows || []).some(row => matches(row.field || "", query));
+    if (inputMatch) return true;
+    const outputMatch = (node.outputRows || []).some(row => matches(row.field || "", query));
+    if (outputMatch) return true;
+    
+    return false;
+  }
+
+  if (state.searchScope === "parameter") {
+    const isParamTableMatch = node.type === "parametersTable" && (
+      matches(node.id || "", query) ||
+      matches(node.callName || "", query)
+    );
+    if (isParamTableMatch) return true;
+
+    return state.parameters.some(param => 
+      matches(param.name || "", query) &&
+      node.callName === param.name
+    );
+  }
+
+  if (state.searchScope === "all") {
+    if (matches(node.id || "", query) || matches(node.label || "", query) || (node.callName && matches(node.callName, query))) {
+      return true;
+    }
+    if (matches(node.inputScript || "", query) || matches(node.outputScript || "", query) || matches(node.conditionScript || "", query)) {
+      return true;
+    }
+    if (allNodeOps.some(op => 
+      matches(op.table || "", query) ||
+      matches(op.operation || "", query) ||
+      matches(op.operationName || "", query) ||
+      (op.columns || []).some(col => matches(col, query))
+    )) {
+      return true;
+    }
+    if ((node.inputRows || []).some(row => matches(row.field || "", query))) return true;
+    if ((node.outputRows || []).some(row => matches(row.field || "", query))) return true;
+    if (node.type === "parametersTable" && (matches(node.id || "", query) || matches(node.callName || "", query))) {
+      return true;
+    }
+    if (state.parameters.some(param => matches(param.name || "", query) && node.callName === param.name)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function renderNode(node, offsetX, offsetY, isActive, dbOps = []) {
   const center = nodeCenter(node, offsetX, offsetY);
   const nodeClass = getNodeClass(node.type);
@@ -4245,15 +4381,72 @@ function renderNode(node, offsetX, offsetY, isActive, dbOps = []) {
     nodeLiveInfo?.executionCount || 0,
   );
 
-  const tooltip = zoralNodeTooltip(node);
+function extractBlobOperations(node) {
+  const blobOps = [];
+  const scripts = [node.inputScript, node.outputScript].filter(Boolean);
+  for (const script of scripts) {
+    if (!script.includes("azure-blob-utils")) continue;
+    const regex = /\bazureBlobUtils\.(\w+)/g;
+    let match;
+    while ((match = regex.exec(script))) {
+      blobOps.push(match[1]);
+    }
+  }
+  return [...new Set(blobOps)];
+}
 
-  const isCodeMatch = state.searchScope === "code" && state.query &&
-    (!state.selectedWorkflow || state.query.toLowerCase().trim() !== state.selectedWorkflow.name.toLowerCase().trim()) && (
-      matches(node.inputScript || "", state.query) ||
-      matches(node.outputScript || "", state.query) ||
-      matches(node.conditionScript || "", state.query)
-    );
-  const matchCodeClass = isCodeMatch ? "match-code" : "";
+function renderBlobBadge(center, node) {
+  const blobOps = extractBlobOperations(node);
+  if (!blobOps.length) return "";
+  const size = nodeSize(node);
+  const halfW = size.width / 2;
+  const halfH = size.height / 2;
+  const anchorX = center.x - halfW * 0.5;
+  const anchorY = center.y - halfH;
+  const iconCx = anchorX - 12;
+  const iconCy = anchorY - 26;
+  const tooltip = `Blob Storage (azure-blob-utils):\n` + blobOps.map(op => `• ${op}`).join("\n");
+  const lineHeight = 14;
+  const listX = iconCx - 13;
+  const listTop = iconCy - ((blobOps.length - 1) * lineHeight) / 2;
+  const rows = blobOps
+    .map((op, index) => {
+      const y = listTop + index * lineHeight + 3;
+      const displayOp = op
+        .replace("Blob", "")
+        .replace("AsBuffer", "")
+        .replace("WithBuffer", "")
+        .replace("AsStream", "");
+      return `<text class="node-blob-list" x="${listX}" y="${y}" text-anchor="end"><title>${escapeHtml(op)}</title><tspan class="blob-op-name">${escapeHtml(displayOp)}</tspan></text>`;
+    })
+    .join("");
+
+  return `
+    <g class="node-blob-icon-group">
+      <title>${escapeHtml(tooltip)}</title>
+      <path class="node-blob-connector" d="M ${anchorX} ${anchorY} L ${iconCx} ${iconCy + 9}"></path>
+      ${renderBlobCloud(iconCx, iconCy)}
+      ${rows}
+    </g>
+  `;
+}
+
+function renderBlobCloud(cx, cy) {
+  return `
+    <path class="node-blob-cloud-body" d="M ${cx - 6} ${cy + 4.5} A 4.5 4.5 0 0 1 ${cx - 6.5} ${cy - 3.5} A 6.5 6.5 0 0 1 ${cx + 1.5} ${cy - 4.5} A 5 5 0 0 1 ${cx + 7.5} ${cy + 0.5} A 4 4 0 0 1 ${cx + 6.5} ${cy + 4.5} Z"></path>
+  `;
+}
+
+const tooltip = zoralNodeTooltip(node);
+
+  const allNodeOps = (() => {
+    if (!state.selectedWorkflow) return [];
+    const diagramOps = getWorkflowSearchOperations(state.selectedWorkflow);
+    return diagramOps.filter(op => op.nodeId === node.id);
+  })();
+  const isSearchMatch = isZoralNodeSearchMatch(node, allNodeOps);
+  const isTargetNodeMatch = state.highlightedNodeId === node.id;
+  const matchCodeClass = (isSearchMatch || isTargetNodeMatch) ? "match-code" : "";
 
   if (node.type === "zbo-caller") {
     const callerLines = splitLabel(node.name, 20).slice(0, 3);
@@ -4281,6 +4474,7 @@ function renderNode(node, offsetX, offsetY, isActive, dbOps = []) {
         ${renderNodeText(center, labelLines, callName)}
         ${asyncTag}
         ${renderDbBadge(center, node, dbOps)}
+        ${renderBlobBadge(center, node)}
         ${repeatBadge}
       </g>
     `;
@@ -4302,6 +4496,7 @@ function renderNode(node, offsetX, offsetY, isActive, dbOps = []) {
         <text class="node-label node-event-caption" x="${center.x}" y="${center.y + 39}" text-anchor="middle">${escapeHtml(labelLines[0] || "")}</text>
         ${asyncTag}
         ${renderDbBadge(center, node, dbOps)}
+        ${renderBlobBadge(center, node)}
         ${repeatBadge}
       </g>
     `;
@@ -4320,6 +4515,7 @@ function renderNode(node, offsetX, offsetY, isActive, dbOps = []) {
         <text class="node-label node-event-caption" x="${center.x}" y="${center.y + 39}" text-anchor="middle">${escapeHtml(labelLines[0] || "")}</text>
         ${asyncTag}
         ${renderDbBadge(center, node, dbOps)}
+        ${renderBlobBadge(center, node)}
         ${repeatBadge}
       </g>
     `;
@@ -4333,6 +4529,7 @@ function renderNode(node, offsetX, offsetY, isActive, dbOps = []) {
       ${renderNodeText(center, labelLines, callName)}
       ${asyncTag}
       ${renderDbBadge(center, node, dbOps)}
+      ${renderBlobBadge(center, node)}
       ${repeatBadge}
     </g>
   `;
@@ -6450,8 +6647,8 @@ function renderLiveExecDetail(workflow) {
   return html;
 }
 
-function makeWorkflowUrl(name) {
-  return navigation.buildTargetUrl(window.location.href, "workflow", name);
+function makeWorkflowUrl(name, nodeId = "") {
+  return navigation.buildTargetUrl(window.location.href, "workflow", name, "", nodeId);
 }
 
 function makeZboUrl(name) {
@@ -6484,7 +6681,7 @@ function initializeNavigationHistory() {
 function navigateInternal(kind, name, options = {}) {
   if (kind === "workflow") {
     if (!state.workflows.some((workflow) => workflow.name === name)) return false;
-    selectWorkflow(name);
+    selectWorkflow(name, { nodeId: options.nodeId });
   } else if (kind === "zbo") {
     if (!state.zboAreas.some((area) => area.name === name)) return false;
     selectZboArea(name);
@@ -6497,12 +6694,12 @@ function navigateInternal(kind, name, options = {}) {
   if (options.history === "push") {
     const url =
       kind === "workflow"
-        ? makeWorkflowUrl(name)
+        ? makeWorkflowUrl(name, options.nodeId)
         : kind === "zbo"
           ? makeZboUrl(name)
           : window.location.href;
     window.history.pushState(
-      { analyzerNavigation: { kind, name } },
+      { analyzerNavigation: { kind, name, nodeId: options.nodeId } },
       "",
       url,
     );
@@ -6530,6 +6727,7 @@ function handleInternalNavigationEvent(event) {
       ? {
         kind: link.dataset.analyzerNav,
         name: link.dataset.analyzerTarget,
+        nodeId: link.dataset.analyzerNode || "",
       }
       : navigation.readTarget(link.href);
   if (!target) return;
@@ -6541,13 +6739,13 @@ function handleInternalNavigationEvent(event) {
   ) {
     return;
   }
-  navigateInternal(target.kind, target.name, { history: "push" });
+  navigateInternal(target.kind, target.name, { history: "push", nodeId: target.nodeId });
 }
 
 function handleNavigationPopState(event) {
   const target =
     event.state?.analyzerNavigation || navigation.readTarget(window.location.href);
-  if (target) navigateInternal(target.kind, target.name);
+  if (target) navigateInternal(target.kind, target.name, { nodeId: target?.nodeId });
 }
 
 function renderWorkflowChip(name) {
@@ -7291,7 +7489,7 @@ function renderTableCrudMap(table) {
     const fontSize = options.small ? "font-size: 11px;" : "";
     if (c.type === "workflow") {
       const nodeText = c.nodeId && !options.compact ? ` (Node: ${escapeHtml(c.nodeId)})` : "";
-      return `<a href="${escapeAttr(makeWorkflowUrl(c.name))}" target="_blank" class="workflow-link" style="${fontSize}">${escapeHtml(c.name)}${nodeText}</a>`;
+      return `<a href="${escapeAttr(makeWorkflowUrl(c.name, c.nodeId))}" target="_blank" class="workflow-link" style="${fontSize}">${escapeHtml(c.name)}${nodeText}</a>`;
     }
     if (c.type === "db-function") {
       return `<a href="#" data-func-link="${escapeAttr(c.name)}" class="workflow-link" style="${fontSize}">${escapeHtml(c.name)} (Func)</a>`;
@@ -7316,13 +7514,20 @@ function renderTableCrudMap(table) {
     return Object.entries(opGroups)
       .sort(([left], [right]) => crudOperationRank(left) - crudOperationRank(right) || left.localeCompare(right))
       .map(([op, list]) => {
-        const links = list.map(c => {
+        const uniqueLinks = [];
+        const seenLinks = new Set();
+        for (const c of list) {
           let linkHtml = renderCrudCallerLink(c, { small: true, compact: true });
           if (c.isTableLevel) {
             linkHtml = `<span style="opacity: 0.75;" title="Table-level caller">${linkHtml}<span style="font-size: 9px; color: var(--muted); padding: 1px 3px; border: 1px dashed var(--line); border-radius: 3px; margin-left: 4px; font-weight: normal; vertical-align: middle; display: inline-block;">Table</span></span>`;
           }
-          return `<div style="margin-bottom: 4px; display: block;">${linkHtml}</div>`;
-        }).join("");
+          const wrapper = `<div style="margin-bottom: 4px; display: block;">${linkHtml}</div>`;
+          if (!seenLinks.has(wrapper)) {
+            seenLinks.add(wrapper);
+            uniqueLinks.push(wrapper);
+          }
+        }
+        const links = uniqueLinks.join("");
         return `
           <div style="margin-bottom: 6px; display: flex; align-items: flex-start; gap: 4px;">
             <div style="flex-shrink: 0;">${renderCrudOpBadge(op)}</div>
@@ -7669,8 +7874,7 @@ function renderEnumCrudMap(en) {
 }
 
 function functionKind(fn) {
-  const source = normalizeSearchText(fn?.sourcePath);
-  return source.includes("procedure_") ? "Stored proc" : "Function";
+  return databaseRoutineKind(fn) === "procedure" ? "Stored proc" : "Function";
 }
 
 function functionNamePattern(name) {

@@ -22,14 +22,20 @@
     return isHttps(locationLike) && requestsNewTab(event);
   }
 
-  function buildTargetUrl(currentHref, kind, name, handoffToken = "") {
+  function buildTargetUrl(currentHref, kind, name, handoffToken = "", nodeId = "") {
     const url = new URL(currentHref);
     if (kind === "workflow") {
       url.searchParams.set("workflow", name);
       url.searchParams.delete("zbo");
+      if (nodeId) {
+        url.searchParams.set("node", nodeId);
+      } else {
+        url.searchParams.delete("node");
+      }
     } else if (kind === "zbo") {
       url.searchParams.set("zbo", name);
       url.searchParams.delete("workflow");
+      url.searchParams.delete("node");
     } else {
       throw new Error(`Unsupported analyzer navigation kind: ${kind}`);
     }
@@ -45,7 +51,12 @@
   function readTarget(currentHref) {
     const url = new URL(currentHref);
     const workflow = url.searchParams.get("workflow");
-    if (workflow) return { kind: "workflow", name: workflow };
+    const nodeId = url.searchParams.get("node");
+    if (workflow) {
+      const res = { kind: "workflow", name: workflow };
+      if (nodeId) res.nodeId = nodeId;
+      return res;
+    }
     const zbo = url.searchParams.get("zbo");
     if (zbo) return { kind: "zbo", name: zbo };
     return null;

@@ -1597,6 +1597,38 @@ body.diagram-panning {
   fill: var(--muted);
 }
 
+.node-blob-icon-group {
+  cursor: pointer;
+}
+
+.node-blob-connector {
+  fill: none;
+  stroke: #2563eb;
+  stroke-width: 1.2;
+  stroke-dasharray: 2 2;
+}
+
+.node-blob-cloud-body {
+  fill: #eff6ff;
+  stroke: #2563eb;
+  stroke-width: 1.2;
+  transition: fill 0.15s ease;
+}
+
+.node-blob-icon-group:hover .node-blob-cloud-body {
+  fill: #dbeafe;
+}
+
+.node-blob-list {
+  font-size: 10px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.blob-op-name {
+  fill: #1e3a8a;
+}
+
 .tabs {
   display: flex;
   min-height: 44px;
