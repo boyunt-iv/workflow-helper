@@ -133,8 +133,8 @@
     if (opts.workflowRequestId) p.set("workflowRequestId", opts.workflowRequestId);
     if (opts.workflowName) p.set("workflowName", opts.workflowName);
     if (opts.status) p.set("status", opts.status);
-    if (opts.fromDate) p.set("processItemDateFrom", opts.fromDate);
-    if (opts.toDate) p.set("processItemDateTo", opts.toDate);
+    if (opts.fromDate) p.set("fromDate", opts.fromDate);
+    if (opts.toDate) p.set("toDate", opts.toDate);
     if (opts.parentRequestId) p.set("parentRequestId", opts.parentRequestId);
     return msBase.replace(/\/+$/, "") + "/runtime/api/report/process?" + p.toString();
   }
