@@ -12,10 +12,10 @@ pre{background:#0b0f18;border:1px solid #222c40;border-radius:8px;padding:12px;w
 <details><summary>bookmarklet source</summary><pre id="src"></pre></details>
 <script src="live-bridge.js"></script>
 <script>
-  const fn = (typeof liveBridge === "function") ? liveBridge : (window.module && module.exports.liveBridge);
-  const src = fn.toString().replace(/^\s*\/\/.*$/gm, "").replace(/\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
-  const code = "javascript:(" + src + ")();void 0;";
-  document.getElementById("bm").href = code;
-  document.getElementById("src").textContent = code;
+const fn = (typeof liveBridge === "function") ? liveBridge : (window.module && module.exports.liveBridge);
+const src = fn.toString().replace(/^\s*\/\/.*$/gm, "").replace(/\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
+const code = "javascript:(" + src + ")();void 0;";
+document.getElementById("bm").href = code;
+document.getElementById("src").textContent = code;
 </script>
 </body></html>
