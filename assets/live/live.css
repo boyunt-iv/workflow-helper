@@ -267,6 +267,63 @@ overflow: hidden;
 text-overflow: ellipsis;
 white-space: nowrap;
 }
+.trace-tree-name-wrapper {
+flex: 1 1 auto;
+min-width: 0;
+display: flex;
+align-items: center;
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+}
+.trace-req-start-header {
+flex: 0 0 155px;
+width: 155px;
+font-weight: 600;
+font-size: 11px;
+color: #94a3b8;
+text-align: right;
+padding-left: 8px;
+box-sizing: border-box;
+white-space: nowrap;
+overflow: hidden;
+user-select: none;
+}
+.trace-req-start-cell {
+flex: 0 0 155px;
+width: 155px;
+font-size: 11px;
+font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+color: #94a3b8;
+text-align: right;
+white-space: nowrap;
+overflow: hidden;
+text-overflow: ellipsis;
+padding-left: 8px;
+box-sizing: border-box;
+}
+.trace-col-toggle-btn {
+font-size: 10px;
+padding: 2px 6px;
+background: #0f1420;
+border: 1px solid #2f3b54;
+color: #94a3b8;
+border-radius: 4px;
+cursor: pointer;
+outline: none;
+font-family: inherit;
+transition: all 0.15s ease;
+}
+.trace-col-toggle-btn:hover {
+background: #1e293b;
+color: #e6ebf5;
+border-color: #475569;
+}
+.trace-col-toggle-btn.active {
+background: rgba(37, 99, 235, 0.2);
+color: #60a5fa;
+border-color: #2563eb;
+}
 .trace-header-row .trace-tree-col {
 resize: horizontal;
 max-width: 80vw;
