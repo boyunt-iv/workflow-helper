@@ -704,6 +704,184 @@ min-height: 34px;
 color: var(--muted);
 font-size: 12px;
 }
+.diagram-pane {
+position: relative;
+}
+/* Floating Diagram Search Controls Overlay */
+.diagram-search-overlay {
+position: absolute;
+top: 82px;
+left: 14px;
+z-index: 40;
+display: flex;
+align-items: center;
+gap: 6px;
+background: #ffffff;
+border: 1px solid var(--line-strong, #cbd5e1);
+border-radius: 8px;
+padding: 5px 8px;
+box-shadow: 0 4px 14px rgba(15, 23, 42, 0.14);
+font-family: inherit;
+font-size: 12px;
+user-select: none;
+}
+.diagram-search-select {
+border: 1px solid #cbd5e1;
+border-radius: 5px;
+background: #f8fafc;
+padding: 4px 8px;
+font-size: 12px;
+font-weight: 700;
+color: #334155;
+cursor: pointer;
+outline: none;
+height: 28px;
+}
+.diagram-search-select:hover,
+.diagram-search-select:focus {
+background: #ffffff;
+border-color: #94a3b8;
+}
+.diagram-search-input-wrapper {
+position: relative;
+display: flex;
+align-items: center;
+}
+.diagram-search-icon {
+position: absolute;
+left: 9px;
+font-size: 12px;
+color: #64748b;
+pointer-events: none;
+z-index: 2;
+line-height: 1;
+}
+.diagram-search-input {
+box-sizing: border-box;
+border: 1px solid #cbd5e1;
+border-radius: 5px;
+padding: 4px 22px 4px 28px;
+font-size: 12px;
+color: #0f172a;
+width: 175px;
+height: 28px;
+outline: none;
+transition: width 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.diagram-search-input:focus {
+width: 220px;
+border-color: #2563eb;
+box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
+}
+.diagram-search-clear {
+position: absolute;
+right: 4px;
+background: none;
+border: none;
+color: #94a3b8;
+cursor: pointer;
+font-size: 12px;
+padding: 2px 4px;
+line-height: 1;
+border-radius: 4px;
+}
+.diagram-search-clear:hover {
+color: #ef4444;
+background: #fee2e2;
+}
+.diagram-match-badge {
+font-size: 11px;
+font-weight: 700;
+padding: 3px 8px;
+border-radius: 12px;
+background: #e0e7ff;
+color: #3730a3;
+white-space: nowrap;
+}
+.diagram-match-badge.no-match {
+background: #f1f5f9;
+color: #64748b;
+}
+.diagram-search-nav {
+display: flex;
+align-items: center;
+gap: 3px;
+margin-left: 2px;
+}
+.diagram-search-nav button {
+min-width: 22px;
+height: 24px;
+border: 1px solid #cbd5e1;
+border-radius: 4px;
+background: #f8fafc;
+color: #334155;
+font-size: 11px;
+font-weight: 700;
+cursor: pointer;
+display: inline-flex;
+align-items: center;
+justify-content: center;
+padding: 0 4px;
+}
+.diagram-search-nav button:hover:not(:disabled) {
+background: #ffffff;
+border-color: #2563eb;
+color: #2563eb;
+}
+.diagram-search-nav button:disabled {
+opacity: 0.4;
+cursor: default;
+}
+.diagram-search-counter {
+font-size: 11px;
+font-weight: 600;
+color: #475569;
+min-width: 28px;
+text-align: center;
+}
+/* Diagram Searching Visual Dimming & Highlighting */
+.diagram-canvas.diagram-searching .node-group,
+.diagram-canvas.diagram-searching .zbo-flow-node,
+.diagram-canvas.diagram-searching .er-table-node,
+.diagram-canvas.diagram-searching .diagram-edge,
+.diagram-canvas.diagram-searching .zbo-flow-edge,
+.diagram-canvas.diagram-searching path.edge-path,
+.diagram-canvas.diagram-searching g.edge-group {
+opacity: 0.35 !important;
+filter: grayscale(40%) !important;
+transition: opacity 0.2s ease, filter 0.2s ease;
+}
+/* Matched Nodes Stay 100% Opacity & Glowing Highlight */
+.diagram-canvas.diagram-searching .node-group.diagram-node-matched,
+.diagram-canvas.diagram-searching .zbo-flow-node.diagram-node-matched,
+.diagram-canvas.diagram-searching .er-table-node.diagram-node-matched {
+opacity: 1 !important;
+filter: none !important;
+}
+.diagram-canvas.diagram-searching .node-group.diagram-node-matched .node-shape,
+.diagram-canvas.diagram-searching .zbo-flow-node.diagram-node-matched rect,
+.diagram-canvas.diagram-searching .zbo-flow-node.diagram-node-matched polygon,
+.diagram-canvas.diagram-searching .er-table-node.diagram-node-matched rect {
+stroke: #2563eb !important;
+stroke-width: 3.2px !important;
+filter: drop-shadow(0 0 10px rgba(37, 99, 235, 0.7)) !important;
+}
+/* Active Nav Node Focus Pulse */
+.diagram-canvas.diagram-searching .node-group.diagram-node-focused .node-shape,
+.diagram-canvas.diagram-searching .zbo-flow-node.diagram-node-focused rect,
+.diagram-canvas.diagram-searching .zbo-flow-node.diagram-node-focused polygon,
+.diagram-canvas.diagram-searching .er-table-node.diagram-node-focused rect {
+stroke: #d97706 !important;
+stroke-width: 4px !important;
+filter: drop-shadow(0 0 14px rgba(217, 119, 6, 0.95)) !important;
+}
+/* Connected edges to matched nodes keep higher visibility */
+.diagram-canvas.diagram-searching .diagram-edge.diagram-edge-connected,
+.diagram-canvas.diagram-searching .zbo-flow-edge.diagram-edge-connected,
+.diagram-canvas.diagram-searching g.edge-group.diagram-edge-connected {
+opacity: 0.85 !important;
+filter: none !important;
+}
 .diagram-canvas {
 position: relative;
 height: calc(100vh - 135px);
