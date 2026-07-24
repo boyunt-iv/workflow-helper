@@ -104,7 +104,7 @@ stroke-linecap="round" stroke-linejoin="round">
 <div id="indexStatus" class="index-status">Loading index...</div>
 <div class="app-version">
 <span>Web version</span>
-<strong>v0.7.12</strong>
+<strong>v0.7.13</strong>
 </div>
 <div style="display: flex; gap: 8px; margin-top: 8px; width: 100%;">
 <button id="lockIndexButton" class="rebuild-button" type="button" style="flex: 0 0 32px; width: 32px; padding: 0; display: flex; align-items: center; justify-content: center; background: rgba(239, 68, 68, 0.1); color: #ef4444; border-color: rgba(239, 68, 68, 0.3);" title="Lock Session">
@@ -201,6 +201,27 @@ style="min-height: 28px; width: auto; padding: 0 12px; font-size: 11px; font-wei
 <span id="zoomLabel">100%</span>
 <button id="zoomInButton" type="button" title="Zoom in" aria-label="Zoom in">+</button>
 </div>
+</div>
+</div>
+<div id="diagramSearchOverlay" class="diagram-search-overlay">
+<select id="diagramSearchTarget" class="diagram-search-select" title="Target to search">
+<option value="db" selected>DB</option>
+<option value="node">Node Name</option>
+<option value="code">Code</option>
+<option value="field">Field</option>
+<option value="live">Live API Value</option>
+<option value="all">All</option>
+</select>
+<div class="diagram-search-input-wrapper">
+<span class="diagram-search-icon">🔍</span>
+<input id="diagramSearchInput" type="text" placeholder="Search diagram..." autocomplete="off" />
+<button id="diagramSearchClearBtn" type="button" class="diagram-search-clear" title="Clear search" style="display:none;">✕</button>
+</div>
+<span id="diagramMatchBadge" class="diagram-match-badge" style="display:none;">0 matches</span>
+<div id="diagramSearchNav" class="diagram-search-nav" style="display:none;">
+<button id="diagramSearchPrevBtn" type="button" title="Previous match">&lt;</button>
+<span id="diagramSearchCounter">0/0</span>
+<button id="diagramSearchNextBtn" type="button" title="Next match">&gt;</button>
 </div>
 </div>
 <div id="diagramCanvas" class="diagram-canvas">
