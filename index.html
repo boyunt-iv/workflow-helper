@@ -99,18 +99,33 @@ stroke-linecap="round" stroke-linejoin="round">
 <button class="mode-button active" type="button" data-mode="zoral">Zoral</button>
 <button class="mode-button" type="button" data-mode="zbo">ZBO</button>
 <button class="mode-button" type="button" data-mode="database">Database</button>
+<button class="mode-button" type="button" data-mode="adw">ADW</button>
 <button class="mode-button" type="button" data-mode="live">Zoral Live API</button>
-<div class="meta-box" aria-live="polite">
+<div id="metaBox" class="meta-box" aria-live="polite">
+<div id="metaBoxHeader" class="meta-box-header" title="Click to minimize / expand index stats">
+<span class="meta-box-title">
+<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+<span>Index Stats</span>
+</span>
+<div class="meta-box-header-actions">
+<span id="metaBoxMiniVer" class="meta-box-badge">v0.8.6</span>
+<button id="metaBoxToggleBtn" class="meta-box-toggle-btn" type="button" title="Minimize / Expand" aria-label="Toggle minimize">
+<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+</button>
+</div>
+</div>
+<div id="metaBoxBody" class="meta-box-body">
 <div id="indexStatus" class="index-status">Loading index...</div>
 <div class="app-version">
 <span>Web version</span>
-<strong>v0.7.13</strong>
+<strong>v0.8.6</strong>
 </div>
 <div style="display: flex; gap: 8px; margin-top: 8px; width: 100%;">
 <button id="lockIndexButton" class="rebuild-button" type="button" style="flex: 0 0 32px; width: 32px; padding: 0; display: flex; align-items: center; justify-content: center; background: rgba(239, 68, 68, 0.1); color: #ef4444; border-color: rgba(239, 68, 68, 0.3);" title="Lock Session">
 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
 </button>
 <button id="rebuildIndexButton" class="rebuild-button" type="button" style="flex: 1 1 auto; margin-top: 0; padding: 0 8px; min-width: 0;">Rebuild Index</button>
+</div>
 </div>
 </div>
 </aside>
@@ -133,6 +148,7 @@ Contains
 <option value="workflow">Workflow</option>
 <option value="workflowIndirect">Workflow (Include Indirect)</option>
 <option value="zbo">ZBO</option>
+<option value="adw">ADW (Hasura & Migrations)</option>
 <option value="parameter">Parameter</option>
 <option value="field">Field</option>
 <option value="table">DB/Table</option>
@@ -178,6 +194,16 @@ Contains
 <button class="db-submode-btn" type="button" data-db-submode="er">ER</button>
 <button class="db-submode-btn" type="button" data-db-submode="triggers">Triggers</button>
 </div>
+<div id="adwSubmodeContainer" class="db-submode-container" style="display: none; align-items: center; gap: 4px;">
+<button class="db-submode-btn active" type="button" data-adw-submode="metadata">Relationships</button>
+<button class="db-submode-btn" type="button" data-adw-submode="migrations">Migrations</button>
+<button class="db-submode-btn" type="button" data-adw-submode="keycloak">Keycloak IAM</button>
+<button id="adwLinterToggleBtn" class="db-submode-btn" type="button" title="Filter tables with Performance/Linter warnings" style="display: none; color: #f59e0b; border-color: rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.08);">⚠ Linter <span id="adwLinterCount">0</span></button>
+<div id="adwMigrationDateGroup" style="display: none; align-items: center; gap: 2px;">
+<input type="date" id="adwMigrationDateInput" class="adw-date-input" title="Filter by date (Calendar)" />
+<button id="adwMigrationDateClearBtn" class="adw-date-clear" type="button" title="Clear date filter">✕</button>
+</div>
+</div>
 </div>
 </div>
 <div id="resultsList" class="results-list"></div>
@@ -186,8 +212,8 @@ Contains
 <section class="diagram-pane">
 <div class="diagram-header">
 <div>
-<h2 id="workflowTitle">Select a workflow</h2>
-<p id="workflowSubtitle">Search or choose a Zoral workflow from the list.</p>
+<h2 id="workflowTitle">Select an item</h2>
+<p id="workflowSubtitle">Search or choose from the list.</p>
 </div>
 <div class="diagram-actions">
 <div id="livePaginationControls" class="live-pagination-header" style="display:none;"></div>
@@ -225,7 +251,7 @@ style="min-height: 28px; width: auto; padding: 0 12px; font-size: 11px; font-wei
 </div>
 </div>
 <div id="diagramCanvas" class="diagram-canvas">
-<div class="empty-state">No workflow selected</div>
+<div class="empty-state">No item selected</div>
 </div>
 </section>
 <div class="resizer detail-resizer" data-resize="detail" title="Resize detail pane"></div>
@@ -235,10 +261,13 @@ style="min-height: 28px; width: auto; padding: 0 12px; font-size: 11px; font-wei
 <button class="tab" type="button" data-tab="node">Node</button>
 <button class="tab" type="button" data-tab="db">DB/GQL</button>
 <button class="tab" type="button" data-tab="inbound">Inbound</button>
+<button class="tab" type="button" data-tab="adw" id="tabAdwDetail" style="display: none;">Hasura/ADW</button>
 <button class="tab" type="button" data-tab="query-gen" id="tabQueryGen" style="display: none;">Query Gen</button>
 <button class="tab" type="button" data-tab="live-exec" id="tabLiveExec"
 style="display: none; background: rgba(255, 159, 0, 0.1); color: #ff9f00; border-bottom: 2px solid transparent;">Live
 Exec 🎯</button>
+<button class="tab" type="button" data-tab="impact" id="tabImpactDetail" style="display: none;">Impact 💥</button>
+<button class="tab" type="button" data-tab="perms-matrix" id="tabPermsMatrix" style="display: none;">Perms Matrix 🛡️</button>
 </div>
 <div id="detailContent" class="detail-content"></div>
 </aside>
