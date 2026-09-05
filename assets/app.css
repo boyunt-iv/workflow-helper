@@ -484,6 +484,105 @@ background: #e6f4f1;
 color: var(--accent);
 font-weight: 650;
 }
+/* CRUD Map Controls & Standalone Toggle Switch */
+.crud-tabs {
+display: flex;
+align-items: center;
+justify-content: space-between;
+gap: 12px;
+margin-bottom: 16px;
+border-bottom: 1px solid var(--line);
+padding-bottom: 10px;
+flex-wrap: wrap;
+}
+.crud-view-group {
+display: inline-flex;
+align-items: center;
+gap: 4px;
+background: var(--surface-2);
+padding: 3px;
+border-radius: 999px;
+border: 1px solid var(--line);
+}
+.crud-view-btn {
+min-height: 24px;
+border: none;
+border-radius: 999px;
+background: transparent;
+color: var(--muted);
+padding: 0 12px;
+font-size: 11px;
+font-weight: 500;
+cursor: pointer;
+transition: all 0.15s ease;
+}
+.crud-view-btn:hover {
+color: var(--text);
+}
+.crud-view-btn.active {
+background: #ffffff;
+color: var(--accent);
+font-weight: 650;
+box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+.crud-toggle-switch-btn {
+display: inline-flex;
+align-items: center;
+gap: 8px;
+min-height: 28px;
+padding: 3px 12px 3px 6px;
+border-radius: 999px;
+border: 1px solid var(--line-strong);
+background: #ffffff;
+color: var(--muted);
+font-size: 11px;
+font-weight: 600;
+cursor: pointer;
+transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+user-select: none;
+}
+.crud-toggle-switch-btn:hover {
+border-color: var(--accent);
+color: var(--text);
+background: #fafafa;
+}
+.crud-toggle-switch-btn.active {
+border-color: rgba(13, 148, 136, 0.4);
+background: rgba(13, 148, 136, 0.08);
+color: var(--accent);
+}
+.crud-toggle-switch-btn .switch-track {
+position: relative;
+display: inline-block;
+width: 28px;
+height: 16px;
+background: #cbd5e1;
+border-radius: 999px;
+transition: background-color 0.2s ease;
+flex-shrink: 0;
+}
+.crud-toggle-switch-btn.active .switch-track {
+background: var(--accent, #0d9488);
+}
+.crud-toggle-switch-btn .switch-knob {
+position: absolute;
+top: 2px;
+left: 2px;
+width: 12px;
+height: 12px;
+background: #ffffff;
+border-radius: 50%;
+box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.crud-toggle-switch-btn.active .switch-knob {
+transform: translateX(12px);
+}
+.crud-toggle-switch-btn .switch-label {
+display: inline-flex;
+align-items: center;
+gap: 4px;
+}
 .diagram-header p {
 margin: 5px 0 0;
 color: var(--muted);
@@ -680,6 +779,14 @@ font-size: 12px;
 font-weight: 700;
 line-height: 1;
 }
+.db-op-via-icon.via-parallel {
+background: #ffedd5;
+color: #c2410c;
+}
+.db-op-via-icon.via-bre {
+background: #fce7f3;
+color: #db2777;
+}
 .db-op-via {
 display: inline-flex;
 align-items: center;
@@ -776,12 +883,24 @@ font-size: 12px;
 .diagram-pane {
 position: relative;
 }
-/* Floating Diagram Search Controls Overlay */
-.diagram-search-overlay {
+/* Floating Diagram Toolbar (Search + Quick Toggles) */
+.diagram-floating-toolbar {
 position: absolute;
 top: 82px;
 left: 14px;
 z-index: 40;
+display: flex;
+align-items: center;
+gap: 8px;
+flex-wrap: wrap;
+max-width: calc(100% - 28px);
+pointer-events: none;
+}
+.diagram-floating-toolbar > * {
+pointer-events: auto;
+}
+/* Floating Diagram Search Controls Overlay */
+.diagram-search-overlay {
 display: flex;
 align-items: center;
 gap: 6px;
@@ -793,6 +912,61 @@ box-shadow: 0 4px 14px rgba(15, 23, 42, 0.14);
 font-family: inherit;
 font-size: 12px;
 user-select: none;
+}
+/* Floating Diagram Toggles Bar */
+.diagram-floating-toggles {
+display: flex;
+align-items: center;
+gap: 5px;
+flex-wrap: wrap;
+background: rgba(255, 255, 255, 0.96);
+backdrop-filter: blur(8px);
+border: 1px solid var(--line-strong, #cbd5e1);
+border-radius: 8px;
+padding: 5px 7px;
+box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+}
+.diagram-floating-toggles:empty {
+display: none !important;
+}
+.diagram-toggle-chip {
+display: inline-flex;
+align-items: center;
+gap: 4px;
+height: 24px;
+padding: 0 9px;
+border-radius: 999px;
+border: 1px solid var(--line, #e2e8f0);
+background: var(--surface-2, #f8fafc);
+color: var(--muted, #64748b);
+font-size: 11px;
+font-weight: 600;
+cursor: pointer;
+transition: all 0.15s ease;
+user-select: none;
+white-space: nowrap;
+}
+.diagram-toggle-chip:hover {
+border-color: #94a3b8;
+color: #1e293b;
+background: #ffffff;
+}
+.diagram-toggle-chip.active {
+border-color: var(--accent, #0d9488);
+background: #e6f4f1;
+color: var(--accent, #0d9488);
+font-weight: 650;
+box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+.diagram-toggle-chip[data-toggle="showBreNodesZoral"].active {
+border-color: #ec4899;
+background: #fdf2f8;
+color: #be185d;
+}
+.diagram-toggle-chip[data-toggle="showParallelNodesZoral"].active {
+border-color: #f59e0b;
+background: #fef3c7;
+color: #b45309;
 }
 .diagram-search-select {
 border: 1px solid #cbd5e1;
@@ -1017,7 +1191,7 @@ border: 0;
 border-radius: 0;
 background: #0f172a;
 color: #e6edf5;
-padding: 22px 26px;
+padding: 80px 26px 22px;
 white-space: pre;
 word-break: normal;
 font-family: "Cascadia Mono", Consolas, monospace;
@@ -1825,6 +1999,14 @@ color: var(--accent);
 background: #eef2ff;
 color: #4f46e5;
 }
+.op-usage-badge.parallel {
+background: #ffedd5;
+color: #c2410c;
+}
+.op-usage-badge.bre {
+background: #fce7f3;
+color: #be185d;
+}
 .operation-via {
 display: flex;
 flex-wrap: wrap;
@@ -1959,6 +2141,82 @@ filter: drop-shadow(0 2px 4px rgba(76, 29, 149, 0.18));
 .zbo-caller-node text {
 fill: var(--text);
 font-weight: bold;
+}
+/* Parallel Child Workflow Nodes in Zoral */
+.parallel-child-node {
+cursor: pointer;
+}
+.parallel-child-node rect.node-shape {
+fill: #fffdf5;
+stroke: #d97706;
+stroke-width: 1.8px;
+stroke-dasharray: 5 2.5;
+filter: drop-shadow(0 2px 5px rgba(217, 119, 6, 0.15));
+transition: stroke 0.15s ease, stroke-width 0.15s ease, filter 0.15s ease;
+}
+.parallel-child-node:hover rect.node-shape {
+stroke: #b45309;
+stroke-width: 2.2px;
+filter: drop-shadow(0 4px 8px rgba(217, 119, 6, 0.28));
+}
+.parallel-child-node.active rect.node-shape {
+stroke: #b45309;
+stroke-width: 2.5px;
+stroke-dasharray: none;
+fill: #fef3c7;
+filter: drop-shadow(0 4px 10px rgba(180, 83, 9, 0.35));
+}
+.parallel-child-node text.node-label {
+fill: #78350f;
+font-size: 11px;
+font-weight: 600;
+}
+.edge-parallel {
+stroke: #d97706 !important;
+stroke-dasharray: 4 3;
+stroke-width: 1.6px !important;
+}
+.edge-parallel:hover {
+stroke: #b45309 !important;
+stroke-width: 2.2px !important;
+}
+/* BRE Sub-workflow Nodes in Zoral */
+.bre-child-node {
+cursor: pointer;
+}
+.bre-child-node rect.node-shape {
+fill: #fff5f7;
+stroke: #f472b6;
+stroke-width: 1.8px;
+stroke-dasharray: 5 2.5;
+filter: drop-shadow(0 2px 5px rgba(236, 72, 153, 0.16));
+transition: stroke 0.15s ease, stroke-width 0.15s ease, filter 0.15s ease;
+}
+.bre-child-node:hover rect.node-shape {
+stroke: #db2777;
+stroke-width: 2.2px;
+filter: drop-shadow(0 4px 8px rgba(219, 39, 119, 0.28));
+}
+.bre-child-node.active rect.node-shape {
+stroke: #be185d;
+stroke-width: 2.5px;
+stroke-dasharray: none;
+fill: #fce7f3;
+filter: drop-shadow(0 4px 10px rgba(190, 24, 93, 0.35));
+}
+.bre-child-node text.node-label {
+fill: #9d174d;
+font-size: 11px;
+font-weight: 600;
+}
+.edge-bre {
+stroke: #ec4899 !important;
+stroke-dasharray: 4 3;
+stroke-width: 1.6px !important;
+}
+.edge-bre:hover {
+stroke: #be185d !important;
+stroke-width: 2.2px !important;
 }
 /* Glassmorphic Settings Modal */
 .modal-overlay {

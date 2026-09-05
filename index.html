@@ -99,7 +99,6 @@ stroke-linecap="round" stroke-linejoin="round">
 <button class="mode-button active" type="button" data-mode="zoral">Zoral</button>
 <button class="mode-button" type="button" data-mode="zbo">ZBO</button>
 <button class="mode-button" type="button" data-mode="database">Database</button>
-<button class="mode-button" type="button" data-mode="adw">ADW</button>
 <button class="mode-button" type="button" data-mode="live">Zoral Live API</button>
 <div id="metaBox" class="meta-box" aria-live="polite">
 <div id="metaBoxHeader" class="meta-box-header" title="Click to minimize / expand index stats">
@@ -108,7 +107,7 @@ stroke-linecap="round" stroke-linejoin="round">
 <span>Index Stats</span>
 </span>
 <div class="meta-box-header-actions">
-<span id="metaBoxMiniVer" class="meta-box-badge">v0.8.6</span>
+<span id="metaBoxMiniVer" class="meta-box-badge">v1.0.0</span>
 <button id="metaBoxToggleBtn" class="meta-box-toggle-btn" type="button" title="Minimize / Expand" aria-label="Toggle minimize">
 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
 </button>
@@ -118,7 +117,7 @@ stroke-linecap="round" stroke-linejoin="round">
 <div id="indexStatus" class="index-status">Loading index...</div>
 <div class="app-version">
 <span>Web version</span>
-<strong>v0.8.6</strong>
+<strong>v1.0.0</strong>
 </div>
 <div style="display: flex; gap: 8px; margin-top: 8px; width: 100%;">
 <button id="lockIndexButton" class="rebuild-button" type="button" style="flex: 0 0 32px; width: 32px; padding: 0; display: flex; align-items: center; justify-content: center; background: rgba(239, 68, 68, 0.1); color: #ef4444; border-color: rgba(239, 68, 68, 0.3);" title="Lock Session">
@@ -148,7 +147,6 @@ Contains
 <option value="workflow">Workflow</option>
 <option value="workflowIndirect">Workflow (Include Indirect)</option>
 <option value="zbo">ZBO</option>
-<option value="adw">ADW (Hasura & Migrations)</option>
 <option value="parameter">Parameter</option>
 <option value="field">Field</option>
 <option value="table">DB/Table</option>
@@ -229,14 +227,15 @@ style="min-height: 28px; width: auto; padding: 0 12px; font-size: 11px; font-wei
 </div>
 </div>
 </div>
+<div id="diagramFloatingToolbar" class="diagram-floating-toolbar">
 <div id="diagramSearchOverlay" class="diagram-search-overlay">
 <select id="diagramSearchTarget" class="diagram-search-select" title="Target to search">
-<option value="db" selected>DB</option>
+<option value="all" selected>All</option>
+<option value="db">DB</option>
 <option value="node">Node Name</option>
 <option value="code">Code</option>
 <option value="field">Field</option>
 <option value="live">Live API Value</option>
-<option value="all">All</option>
 </select>
 <div class="diagram-search-input-wrapper">
 <span class="diagram-search-icon">🔍</span>
@@ -249,6 +248,8 @@ style="min-height: 28px; width: auto; padding: 0 12px; font-size: 11px; font-wei
 <span id="diagramSearchCounter">0/0</span>
 <button id="diagramSearchNextBtn" type="button" title="Next match">&gt;</button>
 </div>
+</div>
+<div id="diagramFloatingToggles" class="diagram-floating-toggles" role="toolbar" aria-label="Diagram Quick Toggles" style="display:none;"></div>
 </div>
 <div id="diagramCanvas" class="diagram-canvas">
 <div class="empty-state">No item selected</div>
@@ -284,58 +285,66 @@ Exec 🎯</button>
 <div class="settings-group-title">General Options</div>
 <label class="inline-check">
 <input id="toggleDbBadges" type="checkbox" checked />
-Show Database Badges
+DB Badges
 </label>
 <label class="inline-check">
 <input id="toggleConditionText" type="checkbox" />
-Show Condition Text
+Conditions
 </label>
 <label class="inline-check">
 <input id="toggleEdgeLabels" type="checkbox" checked />
-Show Edge/Event Labels
+Edge Labels
 </label>
 <label class="inline-check">
 <input id="toggleNodeDrag" type="checkbox" />
-Enable Drag Nodes
+Drag Nodes
 </label>
 <div class="settings-group-title" id="liveModeOptionsTitle">Live API Mode Options</div>
 <label id="toggleShowRequestStartLabel" class="inline-check">
 <input id="toggleShowRequestStart" type="checkbox" checked />
-Show Request Start Column
+Request Start
 </label>
 <div class="settings-group-title">Zoral Mode Options</div>
+<label id="toggleParallelNodesZoralLabel" class="inline-check">
+<input id="toggleParallelNodesZoral" type="checkbox" />
+Parallel Nodes
+</label>
+<label id="toggleBreNodesZoralLabel" class="inline-check">
+<input id="toggleBreNodesZoral" type="checkbox" />
+BRE Nodes
+</label>
 <label id="toggleZboCallersZoralLabel" class="inline-check">
 <input id="toggleZboCallersZoral" type="checkbox" />
-Show ZBO Callers
+ZBO Callers
 </label>
 <div class="settings-group-title">Database Mode Options</div>
+<label id="toggleDbTriggersLabel" class="inline-check">
+<input id="toggleDbTriggers" type="checkbox" checked />
+Triggers
+</label>
 <label id="toggleZoralCallersDbLabel" class="inline-check">
 <input id="toggleZoralCallersDb" type="checkbox" />
-Show Zoral Callers
+Zoral Callers
 </label>
 <label id="toggleZboCallersDbLabel" class="inline-check">
 <input id="toggleZboCallersDb" type="checkbox" />
-Show ZBO Callers
-</label>
-<label id="toggleDbTriggersLabel" class="inline-check">
-<input id="toggleDbTriggers" type="checkbox" checked />
-Show Triggers in Diagram
+ZBO Callers
 </label>
 <label id="toggleDbFuncsCallersDbLabel" class="inline-check">
 <input id="toggleDbFuncsCallersDb" type="checkbox" />
-Show Functions/Store Procedures
+Functions/SPs
 </label>
 <label id="toggleEnumTablesLabel" class="inline-check">
 <input id="toggleEnumTables" type="checkbox" />
-Show Enum Tables
+Enum Tables
 </label>
 <label id="toggleDeepHierarchyLabel" class="inline-check">
 <input id="toggleDeepHierarchy" type="checkbox" />
-Show Deep Relationship Tree
+Deep Tree
 </label>
 <label id="toggleDbTaskTablesLabel" class="inline-check">
 <input id="toggleDbTaskTables" type="checkbox" />
-Show Task/Task Document Tables
+Task Tables
 </label>
 </div>
 <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
