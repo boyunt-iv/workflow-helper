@@ -99,6 +99,7 @@ stroke-linecap="round" stroke-linejoin="round">
 <button class="mode-button active" type="button" data-mode="zoral">Zoral</button>
 <button class="mode-button" type="button" data-mode="zbo">ZBO</button>
 <button class="mode-button" type="button" data-mode="database">Database</button>
+<button class="mode-button" type="button" data-mode="adw">ADW</button>
 <button class="mode-button" type="button" data-mode="live">Zoral Live API</button>
 <div id="metaBox" class="meta-box" aria-live="polite">
 <div id="metaBoxHeader" class="meta-box-header" title="Click to minimize / expand index stats">
@@ -107,7 +108,7 @@ stroke-linecap="round" stroke-linejoin="round">
 <span>Index Stats</span>
 </span>
 <div class="meta-box-header-actions">
-<span id="metaBoxMiniVer" class="meta-box-badge">v1.0.0</span>
+<span id="metaBoxMiniVer" class="meta-box-badge">v1.0.1</span>
 <button id="metaBoxToggleBtn" class="meta-box-toggle-btn" type="button" title="Minimize / Expand" aria-label="Toggle minimize">
 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
 </button>
@@ -117,7 +118,7 @@ stroke-linecap="round" stroke-linejoin="round">
 <div id="indexStatus" class="index-status">Loading index...</div>
 <div class="app-version">
 <span>Web version</span>
-<strong>v1.0.0</strong>
+<strong>v1.0.1</strong>
 </div>
 <div style="display: flex; gap: 8px; margin-top: 8px; width: 100%;">
 <button id="lockIndexButton" class="rebuild-button" type="button" style="flex: 0 0 32px; width: 32px; padding: 0; display: flex; align-items: center; justify-content: center; background: rgba(239, 68, 68, 0.1); color: #ef4444; border-color: rgba(239, 68, 68, 0.3);" title="Lock Session">
@@ -147,6 +148,7 @@ Contains
 <option value="workflow">Workflow</option>
 <option value="workflowIndirect">Workflow (Include Indirect)</option>
 <option value="zbo">ZBO</option>
+<option value="adw">ADW (Hasura & Migrations)</option>
 <option value="parameter">Parameter</option>
 <option value="field">Field</option>
 <option value="table">DB/Table</option>
