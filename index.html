@@ -111,7 +111,7 @@ stroke-linecap="round" stroke-linejoin="round">
 <span>Index Stats</span>
 </span>
 <div class="meta-box-header-actions">
-<span id="metaBoxMiniVer" class="meta-box-badge">v1.1</span>
+<span id="metaBoxMiniVer" class="meta-box-badge">v1.1.1</span>
 <button id="metaBoxToggleBtn" class="meta-box-toggle-btn" type="button" title="Minimize / Expand" aria-label="Toggle minimize">
 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
 </button>
@@ -121,7 +121,7 @@ stroke-linecap="round" stroke-linejoin="round">
 <div id="indexStatus" class="index-status">Loading index...</div>
 <div class="app-version">
 <span>Web version</span>
-<strong>v1.1</strong>
+<strong>v1.1.1</strong>
 </div>
 <div style="display: flex; gap: 8px; margin-top: 8px; width: 100%;">
 <button id="lockIndexButton" class="rebuild-button" type="button" style="flex: 0 0 32px; width: 32px; padding: 0; display: flex; align-items: center; justify-content: center; background: rgba(239, 68, 68, 0.1); color: #ef4444; border-color: rgba(239, 68, 68, 0.3);" title="Lock Session">
@@ -199,6 +199,17 @@ Contains
 <button class="db-submode-btn" type="button" data-db-submode="functions">Funcs</button>
 <button class="db-submode-btn" type="button" data-db-submode="er">ER</button>
 <button class="db-submode-btn" type="button" data-db-submode="triggers">Triggers</button>
+</div>
+<div id="dbMigrationFilterContainer" class="db-submode-container" style="display: none; align-items: center; justify-content: space-between; gap: 4px; margin-top: 4px; padding: 2px 0;">
+<label id="toggleMigrationOnlyLabelResult" class="inline-check" style="font-size: 11px; margin: 0; cursor: pointer; white-space: nowrap;" title="Show only migration tables">
+<input id="toggleMigrationOnlyResult" type="checkbox" /> is_migrate
+</label>
+<div class="tier-pill-group" style="display: inline-flex; gap: 2px; background: var(--surface-2, #f1f5f9); padding: 2px; border-radius: 6px; border: 1px solid var(--line, #cbd5e1);">
+<button type="button" class="tier-pill-btn active" data-tier="all" style="padding: 1px 6px; font-size: 10px; font-weight: 600; border-radius: 4px; border: 0; cursor: pointer;">All</button>
+<button type="button" class="tier-pill-btn" data-tier="1" style="padding: 1px 6px; font-size: 10px; font-weight: 700; border-radius: 4px; border: 0; cursor: pointer; color: #047857;">T1</button>
+<button type="button" class="tier-pill-btn" data-tier="2" style="padding: 1px 6px; font-size: 10px; font-weight: 700; border-radius: 4px; border: 0; cursor: pointer; color: #b45309;">T2</button>
+<button type="button" class="tier-pill-btn" data-tier="3" style="padding: 1px 6px; font-size: 10px; font-weight: 700; border-radius: 4px; border: 0; cursor: pointer; color: #64748b;">T3</button>
+</div>
 </div>
 <div id="adwSubmodeContainer" class="db-submode-container" style="display: none; align-items: center; gap: 4px;">
 <button class="db-submode-btn active" type="button" data-adw-submode="metadata">Relationships</button>
@@ -353,6 +364,10 @@ Deep Tree
 <label id="toggleDbTaskTablesLabel" class="inline-check">
 <input id="toggleDbTaskTables" type="checkbox" />
 Task Tables
+</label>
+<label id="toggleMigrationOnlyLabel" class="inline-check">
+<input id="toggleMigrationOnly" type="checkbox" />
+is_migrate Table
 </label>
 </div>
 <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
