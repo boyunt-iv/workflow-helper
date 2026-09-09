@@ -95,6 +95,9 @@ stroke-linecap="round" stroke-linejoin="round">
 <img src="./assets/favicon.svg" alt="" aria-hidden="true" />
 </span>
 <span class="brand-text">Workflow Helper</span>
+<button class="pane-collapse-btn rail-collapse-btn" type="button" data-pane-toggle="rail" title="Minimize Menu" aria-label="Minimize Menu">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+</button>
 </div>
 <button class="mode-button active" type="button" data-mode="zoral">Zoral</button>
 <button class="mode-button" type="button" data-mode="zbo">ZBO</button>
@@ -108,7 +111,7 @@ stroke-linecap="round" stroke-linejoin="round">
 <span>Index Stats</span>
 </span>
 <div class="meta-box-header-actions">
-<span id="metaBoxMiniVer" class="meta-box-badge">v1.0.2</span>
+<span id="metaBoxMiniVer" class="meta-box-badge">v1.1</span>
 <button id="metaBoxToggleBtn" class="meta-box-toggle-btn" type="button" title="Minimize / Expand" aria-label="Toggle minimize">
 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
 </button>
@@ -118,7 +121,7 @@ stroke-linecap="round" stroke-linejoin="round">
 <div id="indexStatus" class="index-status">Loading index...</div>
 <div class="app-version">
 <span>Web version</span>
-<strong>v1.0.2</strong>
+<strong>v1.1</strong>
 </div>
 <div style="display: flex; gap: 8px; margin-top: 8px; width: 100%;">
 <button id="lockIndexButton" class="rebuild-button" type="button" style="flex: 0 0 32px; width: 32px; padding: 0; display: flex; align-items: center; justify-content: center; background: rgba(239, 68, 68, 0.1); color: #ef4444; border-color: rgba(239, 68, 68, 0.3);" title="Lock Session">
@@ -165,11 +168,14 @@ Contains
 <span id="resultCount">0</span>
 </div>
 <div class="result-actions">
-<label id="resultTableUsageToggleContainer" class="result-toggle" title="Toggle Table Usage Details">
+<button class="btn-copy-icon pane-collapse-btn result-collapse-btn" type="button" data-pane-toggle="results" title="Minimize Results" aria-label="Minimize Results">
+<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><polyline points="15 18 9 12 15 6"></polyline></svg>
+</button>
+<label id="resultTableUsageToggleContainer" class="result-toggle is-active" title="Toggle Table Usage Details">
 <input id="toggleResultTableUsage" type="checkbox" checked />
 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line><line x1="15" y1="3" x2="15" y2="21"></line><line x1="3" y1="9" x2="21" y2="9"></line><line x1="3" y1="15" x2="21" y2="15"></line></svg>
 </label>
-<label id="resultIndirectToggleContainer" class="result-toggle" title="Toggle Indirect called workflow & routine tables">
+<label id="resultIndirectToggleContainer" class="result-toggle is-active" title="Toggle Indirect called workflow & routine tables">
 <input id="toggleIndirectTableUsage" type="checkbox" checked />
 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><path d="M4 4v5a4 4 0 0 0 4 4h12"></path><polyline points="16 9 20 13 16 17"></polyline></svg>
 </label>
