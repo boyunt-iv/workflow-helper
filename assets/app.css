@@ -86,8 +86,24 @@ padding: 16px;
 border-right: 1px solid var(--line);
 background: #17202a;
 color: #f8fafc;
-overflow: hidden;
+overflow-y: auto;
+overflow-x: hidden;
+scrollbar-width: thin;
+scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 transition: padding 0.22s ease;
+}
+.mode-rail::-webkit-scrollbar {
+width: 4px;
+}
+.mode-rail::-webkit-scrollbar-track {
+background: transparent;
+}
+.mode-rail::-webkit-scrollbar-thumb {
+background: rgba(255, 255, 255, 0.15);
+border-radius: 4px;
+}
+.mode-rail::-webkit-scrollbar-thumb:hover {
+background: rgba(255, 255, 255, 0.3);
 }
 .resizer {
 position: relative;
@@ -177,6 +193,7 @@ align-items: center;
 gap: 10px;
 min-height: 44px;
 margin-bottom: 10px;
+flex-shrink: 0;
 }
 .brand-text {
 flex: 1;
@@ -241,6 +258,7 @@ background: rgba(255, 255, 255, 0.05);
 color: #e5edf5;
 text-align: left;
 padding: 8px 10px;
+flex-shrink: 0;
 }
 .mode-button.active {
 border-color: rgba(255, 255, 255, 0.18);
@@ -252,6 +270,7 @@ opacity: 0.48;
 }
 .meta-box {
 margin-top: auto;
+flex-shrink: 0;
 padding: 8px 10px;
 border: 1px solid rgba(255, 255, 255, 0.1);
 border-radius: 8px;

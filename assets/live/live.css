@@ -1134,6 +1134,10 @@ opacity: 1;
 visibility: visible;
 }
 .live-modal-card {
+--text: #f8fafc;
+--text-dim: #cbd5e1;
+--line: rgba(255, 255, 255, 0.12);
+--card-bg: rgba(255, 255, 255, 0.04);
 width: 95%;
 max-width: 1350px;
 height: 85vh;
@@ -1146,7 +1150,7 @@ flex-direction: column;
 overflow: hidden;
 transform: translateY(20px);
 transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-color: #f1f5f9;
+color: #f8fafc;
 }
 /* Payloads split side-by-side view */
 .live-modal-split-row {

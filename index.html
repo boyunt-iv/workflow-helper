@@ -104,14 +104,14 @@ stroke-linecap="round" stroke-linejoin="round">
 <button class="mode-button" type="button" data-mode="database">Database</button>
 <button class="mode-button" type="button" data-mode="adw">ADW</button>
 <button class="mode-button" type="button" data-mode="live">Zoral Live API</button>
-<div id="metaBox" class="meta-box" aria-live="polite">
+<div id="metaBox" class="meta-box collapsed" aria-live="polite">
 <div id="metaBoxHeader" class="meta-box-header" title="Click to minimize / expand index stats">
 <span class="meta-box-title">
 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
 <span>Index Stats</span>
 </span>
 <div class="meta-box-header-actions">
-<span id="metaBoxMiniVer" class="meta-box-badge">v1.1.1</span>
+<span id="metaBoxMiniVer" class="meta-box-badge">v1.1.3</span>
 <button id="metaBoxToggleBtn" class="meta-box-toggle-btn" type="button" title="Minimize / Expand" aria-label="Toggle minimize">
 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
 </button>
@@ -121,7 +121,7 @@ stroke-linecap="round" stroke-linejoin="round">
 <div id="indexStatus" class="index-status">Loading index...</div>
 <div class="app-version">
 <span>Web version</span>
-<strong>v1.1.1</strong>
+<strong>v1.1.3</strong>
 </div>
 <div style="display: flex; gap: 8px; margin-top: 8px; width: 100%;">
 <button id="lockIndexButton" class="rebuild-button" type="button" style="flex: 0 0 32px; width: 32px; padding: 0; display: flex; align-items: center; justify-content: center; background: rgba(239, 68, 68, 0.1); color: #ef4444; border-color: rgba(239, 68, 68, 0.3);" title="Lock Session">
@@ -234,6 +234,10 @@ Contains
 </div>
 <div class="diagram-actions">
 <div id="livePaginationControls" class="live-pagination-header" style="display:none;"></div>
+<button id="btnAiBundle" type="button" class="floating-toggle" title="One-Click AI Investigation Bundle"
+style="display: none; min-height: 28px; width: auto; padding: 0 10px; font-size: 11px; font-weight: 600; align-items: center; gap: 4px; border: 1px solid #7c3aed; border-radius: 6px; background: rgba(124, 58, 237, 0.08); color: #7c3aed; cursor: pointer;">
+🤖 AI Bundle
+</button>
 <button id="diagramSettingsBtn" type="button" class="floating-toggle" title="Diagram Settings"
 style="min-height: 28px; width: auto; padding: 0 12px; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line-strong); border-radius: 6px; background: #fff;">
 ⚙️ Settings
@@ -407,12 +411,14 @@ style="margin-top: 16px; background: #ef4444; color: #fff; border: 0; display: n
 </div>
 <script src="assets/index-crypto.js"></script>
 <script src="assets/navigation-policy.js"></script>
+<script src="assets/live/live-pii.js"></script>
 <script src="assets/live/live-data.js"></script>
 <script src="assets/live/live-graph.js"></script>
 <script src="assets/live/live-views.js"></script>
 <script src="assets/live/live-env.js"></script>
 <script src="assets/live/live-presentation.js"></script>
 <script src="assets/live/live-mode.js"></script>
+<script src="assets/ai-bundle.js"></script>
 <script src="assets/index-loader.js"></script>
 </body>
 </html>
